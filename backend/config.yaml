@@ -1,0 +1,72 @@
+server:
+  port: 8080
+  mode: release
+  lan_ip: ""
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: ""
+  dbname: local_file_hub
+  charset: utf8mb4
+  max_idle_conns: 10
+  max_open_conns: 100
+
+jwt:
+  secret: "your-secret-key"  # 生产环境请通过 JWT_SECRET 环境变量覆盖
+  access_expire: 24h
+
+storage:
+  main_disk_path: "./data/main"
+  backup_disk_path: "./data/backup"
+  temp_path: "./data/temp"
+  max_upload_size: 1073741824
+  default_quota: 107374182400
+  allowed_suffix:
+    - jpg
+    - jpeg
+    - png
+    - gif
+    - mp4
+    - mov
+    - pdf
+    - doc
+    - docx
+    - xls
+    - xlsx
+    - ppt
+    - pptx
+    - zip
+    - rar
+
+sync:
+  cron: "0 1 * * *"
+  mode: 1
+  ignore_suffix:
+    - .tmp
+    - .log
+    - .cache
+    - .DS_Store
+  speed_limit: 0
+
+recycle:
+  auto_clean_days: 30
+
+media:
+  thumbnail_size: 200
+  ffmpeg_path: "/usr/bin/ffmpeg"
+  enable_video_preview: true
+
+websocket:
+  heartbeat_interval: 30s
+  read_timeout: 60s
+  write_timeout: 10s
+
+alert:
+  disk_usage_threshold: 0.85
+  check_interval: 30m
+
+log:
+  level: info
+  file_path: "/var/log/local-file-hub/app.log"

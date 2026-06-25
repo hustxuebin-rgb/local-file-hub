@@ -1,0 +1,55 @@
+.received-shares-page {
+  min-height: 100vh;
+  background: #f5f5f5;
+
+  &__header {
+    padding: 24rpx;
+    background: #ffffff;
+    border-bottom: 2rpx solid #f0f0f0;
+  }
+
+  &__title {
+    font-size: 32rpx;
+    font-weight: 600;
+    color: #333333;
+  }
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80rpx 0;
+  }
+
+  &__content {
+    padding: 16rpx 24rpx;
+  }
+
+  &__share-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24rpx 20rpx;
+    background: #ffffff;
+    border-radius: 16rpx;
+    margin-bottom: 12rpx;
+  }
+
+  &__share-info {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  &__share-user {
+    display: block;
+    font-size: 28rpx;
+    color: #333333;
+    margin-bottom: 4rpx;
+  }
+
+  &__share-time {
+    display: block;
+    font-size: 22rpx;
+    color: #999999;
+  }
+}

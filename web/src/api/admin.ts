@@ -1,0 +1,101 @@
+import client from './client';
+import type { ApiResponse, User, DiskInfo, SyncTask, OperationLog, WarnLog } from '@/types';
+
+/* ========== 用户管理 ========== */
+
+interface UserListData {
+  list: User[];
+  total: number;
+}
+
+export function getUsers(params: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+}): Promise<ApiResponse<UserListData>> {
+  return client.get('/api/user/list', { params }).then((res) => res.data);
+}
+
+interface AddUserReq {
+  username: string;
+  password: string;
+  nickname: string;
+  role: number;
+  storageQuota: number;
+}
+
+export function addUser(data: AddUserReq): Promise<ApiResponse> {
+  return client.post('/api/user/add', data).then((res) => res.data);
+}
+
+interface UpdateUserReq {
+  nickname?: string;
+  role?: number;
+  storageQuota?: number;
+  status?: number;
+}
+
+export function updateUser(id: number, data: UpdateUserReq): Promise<ApiResponse> {
+  return client.put(`/api/user/${id}`, data).then((res) => res.data);
+}
+
+export function deleteUser(id: number): Promise<ApiResponse> {
+  return client.delete(`/api/user/${id}`).then((res) => res.data);
+}
+
+export function searchUsers(keyword: string): Promise<ApiResponse<User[]>> {
+  return client.get('/api/user/search', { params: { q: keyword } }).then((res) => res.data);
+}
+
+/* ========== 磁盘管理 ========== */
+
+export function getDiskInfo(): Promise<ApiResponse<DiskInfo>> {
+  return client.get('/api/storage/disk_info').then((res) => res.data);
+}
+
+export function getSyncTask(): Promise<ApiResponse<SyncTask>> {
+  return client.get('/api/storage/sync_task').then((res) => res.data);
+}
+
+interface UpdateSyncTaskReq {
+  syncMode: number;
+  cronExpr: string;
+  ignoreSuffix?: string;
+  speedLimit?: number;
+}
+
+export function updateSyncTask(data: UpdateSyncTaskReq): Promise<ApiResponse> {
+  return client.put('/api/storage/sync_task', data).then((res) => res.data);
+}
+
+export function manualSync(): Promise<ApiResponse> {
+  return client.post('/api/storage/sync/manual').then((res) => res.data);
+}
+
+/* ========== 同步日志 ========== */
+
+export function getSyncLogs(params: {
+  page?: number;
+  pageSize?: number;
+}): Promise<ApiResponse<{ list: OperationLog[]; total: number }>> {
+  return client.get('/api/storage/sync/logs', { params }).then((res) => res.data);
+}
+
+/* ========== 告警管理 ========== */
+
+export function getWarnLogs(params: {
+  page?: number;
+  pageSize?: number;
+}): Promise<ApiResponse<{ list: WarnLog[]; total: number }>> {
+  return client.get('/api/log/warn', { params }).then((res) => res.data);
+}
+
+export function readWarns(ids: number[]): Promise<ApiResponse> {
+  return client.post('/api/log/warn/read', { ids }).then((res) => res.data);
+}
+
+/* ========== 服务器状态 ========== */
+
+export function getServerInfo(): Promise<ApiResponse<any>> {
+  return client.get('/api/lan/server_info').then((res) => res.data);
+}

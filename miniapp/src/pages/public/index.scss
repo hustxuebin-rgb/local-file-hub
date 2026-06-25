@@ -1,0 +1,50 @@
+.public-page {
+  min-height: 100vh;
+  background: #f5f5f5;
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80rpx 0;
+  }
+
+  &__content {
+    padding: 16rpx 24rpx;
+  }
+
+  &__file-item {
+    display: flex;
+    align-items: center;
+    padding: 20rpx;
+    background: #ffffff;
+    border-radius: 16rpx;
+    margin-bottom: 12rpx;
+  }
+
+  &__file-icon {
+    font-size: 40rpx;
+    margin-right: 20rpx;
+  }
+
+  &__file-info {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  &__file-name {
+    display: block;
+    font-size: 28rpx;
+    color: #333333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 4rpx;
+  }
+
+  &__file-meta {
+    display: block;
+    font-size: 22rpx;
+    color: #999999;
+  }
+}
