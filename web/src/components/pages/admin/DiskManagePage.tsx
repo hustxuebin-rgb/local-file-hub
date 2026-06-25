@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Descriptions, Form, Input, InputNumber, Select, Button, Space, Popconfirm, message, Tag, Spin } from 'antd';
+import { Card, Descriptions, Empty, Form, Input, InputNumber, Select, Button, Space, Popconfirm, message, Tag, Spin } from 'antd';
 import { SyncOutlined, ReloadOutlined } from '@ant-design/icons';
 import { getDiskInfo, getSyncTask, updateSyncTask, manualSync } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
 import type { DiskInfo, SyncTask } from '@/types';
 
 function DiskManagePage(): React.ReactNode {
-  const [diskInfo, setDiskInfo] = useState<DiskInfo | null>(null);
+  const [diskList, setDiskList] = useState<DiskInfo[]>([]);
   const [syncTask, setSyncTask] = useState<SyncTask | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncSubmitting, setSyncSubmitting] = useState(false);
@@ -18,7 +18,7 @@ function DiskManagePage(): React.ReactNode {
     setLoading(true);
     try {
       const [diskRes, syncRes] = await Promise.all([getDiskInfo(), getSyncTask()]);
-      if (diskRes.data) setDiskInfo(diskRes.data);
+      if (diskRes.data) setDiskList(diskRes.data);
       if (syncRes.data) {
         setSyncTask(syncRes.data);
         form.setFieldsValue(syncRes.data);
@@ -91,25 +91,31 @@ function DiskManagePage(): React.ReactNode {
   return (
     <Space orientation="vertical" style={{ width: '100%' }} size="large">
       {/* 磁盘信息 */}
-      <Card title="磁盘信息">
-        {diskInfo && (
-          <Descriptions column={2}>
-            <Descriptions.Item label="磁盘类型">{diskTypeMap[diskInfo.diskType] ?? '未知'}</Descriptions.Item>
-            <Descriptions.Item label="磁盘路径">{diskInfo.diskPath}</Descriptions.Item>
-            <Descriptions.Item label="总容量">{formatSize(diskInfo.totalSize)}</Descriptions.Item>
-            <Descriptions.Item label="已使用">{formatSize(diskInfo.usedSize)}</Descriptions.Item>
-            <Descriptions.Item label="可用空间">{formatSize(diskInfo.availableSize)}</Descriptions.Item>
-            <Descriptions.Item label="状态">
-              <Tag color={diskStatusMap[diskInfo.status]?.color}>
-                {diskStatusMap[diskInfo.status]?.text ?? '未知'}
-              </Tag>
-            </Descriptions.Item>
-            {diskInfo.remark && (
-              <Descriptions.Item label="备注">{diskInfo.remark}</Descriptions.Item>
-            )}
-          </Descriptions>
-        )}
-      </Card>
+      {diskList.length > 0 ? (
+        diskList.map((disk) => (
+          <Card key={disk.id} title={`磁盘 #${disk.id}`} style={{ marginBottom: 16 }}>
+            <Descriptions column={2} size="small">
+              <Descriptions.Item label="磁盘类型">{diskTypeMap[disk.diskType] ?? '未知'}</Descriptions.Item>
+              <Descriptions.Item label="磁盘路径">{disk.diskPath}</Descriptions.Item>
+              <Descriptions.Item label="总容量">{formatSize(disk.totalSize)}</Descriptions.Item>
+              <Descriptions.Item label="已使用">{formatSize(disk.usedSize)}</Descriptions.Item>
+              <Descriptions.Item label="可用空间">{formatSize(disk.availableSize)}</Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <Tag color={diskStatusMap[disk.status]?.color}>
+                  {diskStatusMap[disk.status]?.text ?? '未知'}
+                </Tag>
+              </Descriptions.Item>
+              {disk.remark && (
+                <Descriptions.Item label="备注">{disk.remark}</Descriptions.Item>
+              )}
+            </Descriptions>
+          </Card>
+        ))
+      ) : (
+        <Card title="磁盘信息">
+          <Empty description="暂无磁盘，请先配置存储盘" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        </Card>
+      )}
 
       {/* 同步配置 */}
       <Card

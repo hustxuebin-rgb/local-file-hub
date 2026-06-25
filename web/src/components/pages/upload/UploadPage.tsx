@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Card,
   Upload,
@@ -10,9 +10,11 @@ import {
   Space,
   Typography,
   Tag,
+  Modal,
+  Alert,
 } from 'antd';
 import { InboxOutlined, ReloadOutlined } from '@ant-design/icons';
-import { uploadInit, uploadChunk, uploadMerge, getTree } from '@/api';
+import { uploadInit, uploadChunk, uploadMerge, uploadCancel, getTree } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
 import type { Folder } from '@/types';
 
@@ -25,7 +27,12 @@ interface UploadTask {
   fileName: string;
   fileSize: number;
   progress: number;
-  status: 'pending' | 'uploading' | 'done' | 'error';
+  status: 'pending' | 'uploading' | 'done' | 'error' | 'skipped';
+}
+
+interface ConflictInfo {
+  fileName: string;
+  conflictFileId: number;
 }
 
 function UploadPage(): React.ReactNode {
@@ -33,9 +40,19 @@ function UploadPage(): React.ReactNode {
   const [targetFolderId, setTargetFolderId] = useState<number | null>(null);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
   const [uploading, setUploading] = useState(false);
-  const chunksRef = useRef<Map<string, string>>(new Map()); // fileName -> taskId
+  const [queueIndex, setQueueIndex] = useState(0);
+  const [queueTotal, setQueueTotal] = useState(0);
+  const [conflictModal, setConflictModal] = useState<ConflictInfo | null>(null);
+  const chunksRef = useRef<Map<string, string>>(new Map());
+  // 冲突弹窗队列：并发场景下多个文件同时冲突时排队处理
+  const conflictQueueRef = useRef<Array<{
+    fileName: string;
+    conflictFileId: number;
+    resolve: (choice: 'replace' | 'keepBoth' | 'cancel') => void;
+  }>>([]);
+  // 使用 ref 跟踪总数，避免并发场景下的闭包陷阱
+  const totalRef = useRef(0);
 
-  // 加载文件夹树
   const loadFolderTree = async () => {
     try {
       const res = await getTree();
@@ -47,10 +64,29 @@ function UploadPage(): React.ReactNode {
     }
   };
 
-  // 上传单个文件
-  const uploadFile = async (file: File) => {
+  // 弹出下一个冲突弹窗
+  const popNextConflict = useCallback(() => {
+    if (conflictQueueRef.current.length === 0) return;
+    const item = conflictQueueRef.current[0];
+    setConflictModal({ fileName: item.fileName, conflictFileId: item.conflictFileId });
+  }, []);
+
+  // 处理冲突弹窗的用户选择（队列消费）
+  const handleConflictChoice = useCallback((choice: 'replace' | 'keepBoth' | 'cancel') => {
+    const item = conflictQueueRef.current.shift();
+    setConflictModal(null);
+    if (item) {
+      item.resolve(choice);
+      // 处理队列中下一个冲突
+      popNextConflict();
+    }
+  }, [popNextConflict]);
+
+  // 上传单个文件，返回冲突选择信息
+  const uploadFile = async (file: File): Promise<void> => {
+    const taskUid = file.name + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const task: UploadTask = {
-      uid: file.name + Date.now(),
+      uid: taskUid,
       fileName: file.name,
       fileSize: file.size,
       progress: 0,
@@ -60,11 +96,10 @@ function UploadPage(): React.ReactNode {
     setUploadTasks((prev) => [...prev, task]);
 
     try {
-      // 1. 初始化上传
       const initRes = await uploadInit({
         fileName: file.name,
         fileSize: file.size,
-        md5: 'temp-' + Date.now(), // 简化 MD5 计算
+        md5: '',
         folderId: targetFolderId,
       });
 
@@ -72,13 +107,59 @@ function UploadPage(): React.ReactNode {
         throw new Error('初始化上传失败');
       }
 
-      const { taskId, totalChunks } = initRes.data;
-      chunksRef.current.set(file.name, taskId);
+      const { taskId, quickDone, chunkSize, totalChunks, conflictExists, conflictFileId } = initRes.data;
 
-      // 2. 分片上传
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
+      // 秒传
+      if (quickDone) {
+        setUploadTasks((prev) =>
+          prev.map((t) => (t.uid === taskUid ? { ...t, progress: 100, status: 'done' as const } : t)),
+        );
+        return;
+      }
+
+      if (!taskId) {
+        throw new Error('初始化上传失败: 未获取到taskId');
+      }
+
+      // 名称冲突检测：弹窗询问用户（队列模式，支持并发冲突）
+      let overwriteFileId: number | undefined;
+      if (conflictExists && conflictFileId) {
+        const choice = await new Promise<'replace' | 'keepBoth' | 'cancel'>((resolve) => {
+          const isFirst = conflictQueueRef.current.length === 0;
+          conflictQueueRef.current.push({ fileName: file.name, conflictFileId, resolve });
+          if (isFirst) {
+            popNextConflict();
+          }
+        });
+
+        if (choice === 'cancel') {
+          // 取消该文件上传
+          await uploadCancel(taskId);
+          setUploadTasks((prev) =>
+            prev.map((t) => (t.uid === taskUid ? { ...t, status: 'skipped' as const } : t)),
+          );
+          return;
+        }
+
+        if (choice === 'replace') {
+          overwriteFileId = conflictFileId;
+        }
+        // keepBoth: 不设 overwriteFileId，走自动重名
+      }
+
+      // 更新状态为上传中
+      setUploadTasks((prev) =>
+        prev.map((t) => (t.uid === taskUid ? { ...t, status: 'uploading' as const } : t)),
+      );
+
+      const effectiveChunkSize = chunkSize ?? CHUNK_SIZE;
+      const chunks = totalChunks ?? Math.max(1, Math.ceil(file.size / effectiveChunkSize));
+      chunksRef.current.set(taskUid, taskId);
+
+      // 分片上传
+      for (let i = 0; i < chunks; i++) {
+        const start = i * effectiveChunkSize;
+        const end = Math.min(start + effectiveChunkSize, file.size);
         const chunk = file.slice(start, end);
 
         const formData = new FormData();
@@ -88,37 +169,28 @@ function UploadPage(): React.ReactNode {
 
         await uploadChunk(formData);
 
-        // 更新进度
-        const progress = Math.round(((i + 1) / totalChunks) * 100);
+        const progress = Math.round(((i + 1) / chunks) * 100);
         setUploadTasks((prev) =>
-          prev.map((t) =>
-            t.uid === task.uid ? { ...t, progress, status: 'uploading' as const } : t,
-          ),
+          prev.map((t) => (t.uid === taskUid ? { ...t, progress, status: 'uploading' as const } : t)),
         );
       }
 
-      // 3. 合并分片
-      await uploadMerge({
-        taskId,
-      });
+      // 合并分片
+      await uploadMerge({ taskId, overwriteFileId });
 
       setUploadTasks((prev) =>
-        prev.map((t) =>
-          t.uid === task.uid ? { ...t, progress: 100, status: 'done' as const } : t,
-        ),
+        prev.map((t) => (t.uid === taskUid ? { ...t, progress: 100, status: 'done' as const } : t)),
       );
     } catch (err: unknown) {
-      const typedErr = err as { response?: { data?: { code?: number } } };
-      message.error(`${file.name} 上传失败: ${getErrorMessage(typedErr.response?.data?.code)}`);
+      const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code;
+      message.error(`${file.name} 上传失败: ${code ? getErrorMessage(code) : '网络错误，请重试'}`);
       setUploadTasks((prev) =>
-        prev.map((t) =>
-          t.uid === task.uid ? { ...t, status: 'error' as const } : t,
-        ),
+        prev.map((t) => (t.uid === taskUid ? { ...t, status: 'error' as const } : t)),
       );
     }
   };
 
-  // 自定义上传 — 阻止默认上传行为
+  // 批量上传：每个文件独立创建异步任务，并发执行
   const customRequest = () => {};
 
   const handleBeforeUpload = (file: File): boolean => {
@@ -126,28 +198,46 @@ function UploadPage(): React.ReactNode {
       message.warning('请先选择目标文件夹');
       return false;
     }
-    uploadFile(file);
-    return false; // 阻止默认上传
+    totalRef.current += 1;
+    setQueueTotal(totalRef.current);
+    setUploading(true);
+    uploadFile(file).finally(() => {
+      setUploadTasks((prev) => {
+        const done = prev.filter((t) => t.status === 'done' || t.status === 'error' || t.status === 'skipped').length;
+        setQueueIndex(done);
+        if (done >= totalRef.current) {
+          setUploading(false);
+          totalRef.current = 0;
+        }
+        return prev;
+      });
+    });
+    return false;
   };
 
-  // 加载文件夹树
   useEffect(() => {
     loadFolderTree();
+    return () => {
+      // 组件卸载时清理冲突弹窗队列，避免 Promise 永久挂起
+      while (conflictQueueRef.current.length > 0) {
+        conflictQueueRef.current.shift()!.resolve('cancel');
+      }
+      setConflictModal(null);
+    };
   }, []);
 
-  // Select 下拉选项
   const selectOptions = folderTree.map((f) => ({
     value: f.id,
     label: f.folderName,
   }));
 
-  // 上传任务表格
   const columns = [
     { title: '文件名', dataIndex: 'fileName', key: 'fileName' },
     {
       title: '大小',
       dataIndex: 'fileSize',
       key: 'fileSize',
+      width: 100,
       render: (size: number) => {
         if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
         return `${(size / 1024 / 1024).toFixed(1)} MB`;
@@ -157,6 +247,7 @@ function UploadPage(): React.ReactNode {
       title: '进度',
       dataIndex: 'progress',
       key: 'progress',
+      width: 120,
       render: (progress: number, record: UploadTask) => (
         <Progress
           percent={progress}
@@ -169,12 +260,14 @@ function UploadPage(): React.ReactNode {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 100,
       render: (status: string) => {
         const statusMap: Record<string, { color: string; text: string }> = {
           pending: { color: 'default', text: '等待中' },
           uploading: { color: 'processing', text: '上传中' },
           done: { color: 'success', text: '已完成' },
           error: { color: 'error', text: '失败' },
+          skipped: { color: 'warning', text: '已跳过' },
         };
         const s = statusMap[status] ?? { color: 'default', text: status };
         return <Tag color={s.color}>{s.text}</Tag>;
@@ -210,6 +303,19 @@ function UploadPage(): React.ReactNode {
           )}
         </Space>
 
+        {/* 任务进度 */}
+        {queueTotal > 0 && (
+          <Alert
+            type="info"
+            showIcon
+            message={
+              uploading
+                ? `上传中：已完成 ${queueIndex}/${queueTotal} 个文件`
+                : `全部上传完成（${queueTotal} 个文件）`
+            }
+          />
+        )}
+
         {/* 拖拽上传区域 */}
         <Dragger
           name="file"
@@ -224,7 +330,7 @@ function UploadPage(): React.ReactNode {
           </p>
           <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
           <p className="ant-upload-hint">
-            支持单个或批量上传，文件将通过分片方式上传
+            支持批量上传，文件将排队依次处理
           </p>
         </Dragger>
 
@@ -238,6 +344,31 @@ function UploadPage(): React.ReactNode {
             size="small"
           />
         )}
+
+        {/* 名称冲突确认弹窗 */}
+        <Modal
+          title="文件名冲突"
+          open={conflictModal !== null}
+          onCancel={() => handleConflictChoice('cancel')}
+          footer={[
+            <Button key="cancel" onClick={() => handleConflictChoice('cancel')}>
+              取消上传
+            </Button>,
+            <Button key="keep" onClick={() => handleConflictChoice('keepBoth')}>
+              保留两者
+            </Button>,
+            <Button key="replace" type="primary" onClick={() => handleConflictChoice('replace')}>
+              替换
+            </Button>,
+          ]}
+        >
+          <p>
+            文件 <Text strong>{conflictModal?.fileName}</Text> 已存在，是否替换？
+          </p>
+          <p style={{ color: '#888', fontSize: 13 }}>
+            替换将删除旧文件并上传新文件；保留两者将自动重命名新文件（如 hello(1).txt）。
+          </p>
+        </Modal>
       </Space>
     </Card>
   );

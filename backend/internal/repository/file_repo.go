@@ -51,6 +51,17 @@ func (r *FileRepo) FindByMD5(md5 string) (*model.FileInfo, error) {
 	return &file, nil
 }
 
+// FindByNameInFolder 查找用户指定文件夹下的同名未删除文件
+func (r *FileRepo) FindByNameInFolder(userID, folderID int64, fileName string) (*model.FileInfo, error) {
+	var file model.FileInfo
+	err := r.DB.Where("user_id = ? AND folder_id = ? AND file_name = ? AND is_delete = 0",
+		userID, folderID, fileName).First(&file).Error
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
 // Update 更新文件记录
 func (r *FileRepo) Update(file *model.FileInfo) error {
 	return r.DB.Save(file).Error

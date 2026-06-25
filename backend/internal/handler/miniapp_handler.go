@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"local-file-hub/backend/internal/model"
@@ -38,14 +39,15 @@ func (h *MiniappHandler) AlbumUploadHandler(c *gin.Context) {
 		return
 	}
 
-	// 生成保存名称（随机字符串避免冲突）
-	saveName := randomUUID()
-	ext := filepath.Ext(header.Filename)
+	// 生成保存名称（使用原始文件名，重名时追加后缀）
+	saveName := header.Filename
+	ext := filepath.Ext(saveName)
 	if ext == "" {
 		ext = ".bin"
+		saveName = saveName + ext
 	}
 
-	// 构建存储路径：user_storage/{storage_root}/{yyyy-mm}/{uuid}.ext
+	// 构建存储路径：user_storage/{storage_root}/{yyyy-mm}/{原始名}.ext
 	user, err := h.StorageService.UserRepo.FindByID(userID)
 	if err != nil {
 		response.Error(c, response.CodeInternal, "用户不存在")
@@ -65,7 +67,18 @@ func (h *MiniappHandler) AlbumUploadHandler(c *gin.Context) {
 		return
 	}
 
-	destPath := filepath.Join(destDir, saveName+ext)
+	destPath := filepath.Join(destDir, saveName)
+
+	// 重名检测：追加 (1) (2) 等后缀避免覆盖
+	for counter := 1; ; counter++ {
+		if _, err := os.Stat(destPath); os.IsNotExist(err) {
+			break
+		}
+		base := strings.TrimSuffix(saveName, ext)
+		saveName = fmt.Sprintf("%s(%d)%s", base, counter, ext)
+		destPath = filepath.Join(destDir, saveName)
+	}
+
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		response.Error(c, response.CodeInternal, "创建文件失败")

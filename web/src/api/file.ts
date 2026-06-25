@@ -52,9 +52,12 @@ interface UploadInitReq {
 
 interface UploadInitResp {
   taskId: string;
-  uploadId: string;
-  chunkSize: number;
-  totalChunks: number;
+  quickDone: boolean;
+  fileId?: number;
+  chunkSize?: number;
+  totalChunks?: number;
+  conflictExists: boolean;
+  conflictFileId?: number;
 }
 
 export function uploadInit(data: UploadInitReq): Promise<ApiResponse<UploadInitResp>> {
@@ -71,6 +74,7 @@ export function uploadChunk(formData: FormData): Promise<ApiResponse> {
 
 interface UploadMergeReq {
   taskId: string;
+  overwriteFileId?: number;
 }
 
 export function uploadMerge(data: UploadMergeReq): Promise<ApiResponse> {

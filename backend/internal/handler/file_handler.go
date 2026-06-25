@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -33,13 +34,14 @@ type FileHandler struct {
 type UploadInitReq struct {
 	FileName string `json:"fileName" binding:"required"`
 	FileSize int64  `json:"fileSize" binding:"required"`
-	FileMD5  string `json:"fileMd5"`
+	FileMD5  string `json:"md5"`
 	FolderID int64  `json:"folderId"`
 }
 
 // UploadMergeReq 合并上传请求
 type UploadMergeReq struct {
-	TaskID string `json:"taskId" binding:"required"`
+	TaskID          string `json:"taskId" binding:"required"`
+	OverwriteFileID int64  `json:"overwriteFileId"` // 覆盖目标文件ID，0=不覆盖
 }
 
 // UploadCancelReq 取消上传请求
@@ -115,7 +117,8 @@ func toFileInfoResp(f *model.FileInfo) FileInfoResp {
 func (h *FileHandler) UploadInit(c *gin.Context) {
 	var req UploadInitReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		log.Printf("upload init bind error: %v", err)
+		response.Error(c, response.CodeBadRequest, "请求参数错误")
 		return
 	}
 
@@ -123,7 +126,8 @@ func (h *FileHandler) UploadInit(c *gin.Context) {
 
 	resp, err := h.UploadService.InitUpload(userID, req.FileName, req.FileSize, req.FileMD5, req.FolderID)
 	if err != nil {
-		response.Error(c, response.CodeInternal, "初始化上传失败: "+err.Error())
+		log.Printf("upload init error: %v", err)
+		response.Error(c, response.CodeInternal, "初始化上传失败")
 		return
 	}
 
@@ -157,7 +161,8 @@ func (h *FileHandler) UploadChunk(c *gin.Context) {
 
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
-		response.Error(c, response.CodeBadRequest, "读取分块文件失败: "+err.Error())
+		log.Printf("upload chunk formfile error: %v", err)
+		response.Error(c, response.CodeBadRequest, "读取分块文件失败")
 		return
 	}
 	defer file.Close()
@@ -169,7 +174,8 @@ func (h *FileHandler) UploadChunk(c *gin.Context) {
 	}
 
 	if err := h.UploadService.CreateChunk(taskID, chunkIndex, data); err != nil {
-		response.Error(c, response.CodeInternal, "写入分块失败: "+err.Error())
+		log.Printf("upload chunk error: %v", err)
+		response.Error(c, response.CodeInternal, "写入分块失败")
 		return
 	}
 
@@ -180,15 +186,25 @@ func (h *FileHandler) UploadChunk(c *gin.Context) {
 func (h *FileHandler) UploadMerge(c *gin.Context) {
 	var req UploadMergeReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		log.Printf("upload merge bind error: %v", err)
+		response.Error(c, response.CodeBadRequest, "请求参数错误")
 		return
 	}
 
 	userID := c.GetInt64("user_id")
 
-	fileInfo, err := h.UploadService.MergeChunks(req.TaskID)
+	// 校验 task 归属权
+	task, err := h.UploadService.GetTask(req.TaskID)
+	if err != nil || task.UserID != userID {
+		log.Printf("upload merge: task ownership mismatch, userID=%d", userID)
+		response.Error(c, response.CodeForbidden, "无权操作此上传任务")
+		return
+	}
+
+	fileInfo, err := h.UploadService.MergeChunks(req.TaskID, req.OverwriteFileID)
 	if err != nil {
-		response.Error(c, response.CodeInternal, "合并文件失败: "+err.Error())
+		log.Printf("upload merge error: %v", err)
+		response.Error(c, response.CodeInternal, "合并文件失败")
 		return
 	}
 

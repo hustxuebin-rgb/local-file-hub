@@ -18,9 +18,17 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-// 响应拦截器：错误处理
+// 响应拦截器：统一错误处理
 client.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // 后端统一返回 HTTP 200，业务状态码在 data.code 中
+    const apiRes = res.data as ApiResponse<unknown> | undefined;
+    if (apiRes && apiRes.code !== 200) {
+      // 将业务错误转为 rejected promise，由调用方 catch 处理提示
+      return Promise.reject({ response: { data: apiRes } });
+    }
+    return res;
+  },
   (error) => {
     if (error.response?.status === 401) {
       useAuthStore.getState().logout();

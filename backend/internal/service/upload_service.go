@@ -3,10 +3,12 @@ package service
 import (
 	"crypto/md5"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -38,11 +40,20 @@ type UploadService struct {
 	MaxFileSize    int64  // 最大文件大小
 }
 
+// GetTask 获取上传任务（用于归属权校验）
+func (s *UploadService) GetTask(taskID string) (*model.UploadTask, error) {
+	return s.UploadTaskRepo.FindByTaskID(taskID)
+}
+
 // InitUploadResp 初始化上传响应
 type InitUploadResp struct {
-	TaskID    string `json:"taskId"`
-	QuickDone bool   `json:"quickDone"`        // 是否秒传完成
-	FileID    int64  `json:"fileId,omitempty"` // 秒传时返回文件ID
+	TaskID         string `json:"taskId"`
+	QuickDone      bool   `json:"quickDone"`                // 是否秒传完成
+	FileID         int64  `json:"fileId,omitempty"`         // 秒传时返回文件ID
+	ChunkSize      int    `json:"chunkSize,omitempty"`      // 分片大小（非秒传时）
+	TotalChunks    int    `json:"totalChunks,omitempty"`    // 总分片数（非秒传时）
+	ConflictExists bool   `json:"conflictExists"`           // 目标文件夹下存在同名文件
+	ConflictFileID int64  `json:"conflictFileId,omitempty"` // 冲突文件ID
 }
 
 // InitUpload 初始化上传任务，含秒传检测
@@ -89,6 +100,12 @@ func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64
 		}
 	}
 
+	// 重名检测：查询目标文件夹下是否有同名文件
+	var conflictFileID int64
+	if existing, err := s.FileRepo.FindByNameInFolder(userID, folderID, fileName); err == nil && existing != nil {
+		conflictFileID = existing.ID
+	}
+
 	// 计算分块
 	chunkSize := 5 * 1024 * 1024 // 默认5MB
 	totalChunk := int((fileSize + int64(chunkSize) - 1) / int64(chunkSize))
@@ -112,7 +129,14 @@ func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64
 		return nil, err
 	}
 
-	return &InitUploadResp{TaskID: taskID, QuickDone: false}, nil
+	return &InitUploadResp{
+		TaskID:         taskID,
+		QuickDone:      false,
+		ChunkSize:      chunkSize,
+		TotalChunks:    totalChunk,
+		ConflictExists: conflictFileID > 0,
+		ConflictFileID: conflictFileID,
+	}, nil
 }
 
 // CreateChunk 写入单个分块到临时存储
@@ -140,7 +164,8 @@ func (s *UploadService) CreateChunk(taskID string, chunkIndex int, data []byte) 
 }
 
 // MergeChunks 合并所有分块为最终文件，计算MD5
-func (s *UploadService) MergeChunks(taskID string) (*model.FileInfo, error) {
+// overwriteFileID > 0 时，新文件创建成功后删除旧文件
+func (s *UploadService) MergeChunks(taskID string, overwriteFileID int64) (*model.FileInfo, error) {
 	task, err := s.UploadTaskRepo.FindByTaskID(taskID)
 	if err != nil {
 		return nil, err
@@ -169,10 +194,21 @@ func (s *UploadService) MergeChunks(taskID string) (*model.FileInfo, error) {
 		return nil, err
 	}
 
-	saveName := generateUUID()
-	ext := filepath.Ext(task.FileName)
-	saveName = saveName + ext
+	saveName := task.FileName
+	ext := filepath.Ext(saveName)
+	originalBase := strings.TrimSuffix(saveName, ext)
 	destPath := filepath.Join(userDir, saveName)
+
+	// 重名检测：非覆盖模式时追加 (1) (2) 等后缀避免覆盖
+	if overwriteFileID == 0 {
+		for counter := 1; ; counter++ {
+			if _, err := os.Stat(destPath); os.IsNotExist(err) {
+				break
+			}
+			saveName = fmt.Sprintf("%s(%d)%s", originalBase, counter, ext)
+			destPath = filepath.Join(userDir, saveName)
+		}
+	}
 
 	// 合并分块并计算MD5
 	chunkDir := filepath.Join(s.ChunkDir, taskID)
@@ -181,6 +217,14 @@ func (s *UploadService) MergeChunks(taskID string) (*model.FileInfo, error) {
 		return nil, err
 	}
 	defer destFile.Close()
+
+	// 合并失败时清理残留文件
+	mergeOk := false
+	defer func() {
+		if !mergeOk {
+			os.Remove(destPath)
+		}
+	}()
 
 	hash := md5.New()
 	for i := 0; i < task.TotalChunk; i++ {
@@ -225,6 +269,24 @@ func (s *UploadService) MergeChunks(taskID string) (*model.FileInfo, error) {
 		return nil, err
 	}
 
+	// 覆盖模式：新文件创建成功后删除旧文件
+	if overwriteFileID > 0 {
+		oldFile, err := s.FileRepo.FindByID(overwriteFileID)
+		if err == nil && oldFile.UserID == task.UserID {
+			if err := os.Remove(oldFile.FullPath); err != nil && !os.IsNotExist(err) {
+				log.Printf("merge overwrite: remove old file failed: %v", err)
+			}
+			if err := s.FileRepo.HardDelete(overwriteFileID); err != nil {
+				log.Printf("merge overwrite: hard delete failed: %v", err)
+			}
+			if err := s.UserRepo.UpdateUsedSize(task.UserID, -oldFile.FileSize); err != nil {
+				log.Printf("merge overwrite: update used size failed: %v", err)
+			}
+		}
+	}
+
+	mergeOk = true
+
 	// 清理分块临时文件
 	os.RemoveAll(chunkDir)
 
@@ -254,7 +316,11 @@ func (s *UploadService) CancelUpload(taskID string) error {
 // generateUUID 生成UUID格式字符串
 func generateUUID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// 熵源不足时降级：时间戳高8字节 + 进程ID低8字节
+		binary.BigEndian.PutUint64(b[0:8], uint64(time.Now().UnixNano()))
+		binary.BigEndian.PutUint64(b[8:16], uint64(os.Getpid()))
+	}
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 

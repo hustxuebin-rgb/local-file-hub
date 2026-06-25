@@ -49,7 +49,7 @@ export function searchUsers(keyword: string): Promise<ApiResponse<User[]>> {
 
 /* ========== 磁盘管理 ========== */
 
-export function getDiskInfo(): Promise<ApiResponse<DiskInfo>> {
+export function getDiskInfo(): Promise<ApiResponse<DiskInfo[]>> {
   return client.get('/api/storage/disk_info').then((res) => res.data);
 }
 
