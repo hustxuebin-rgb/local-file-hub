@@ -53,6 +53,31 @@ export function getDiskInfo(): Promise<ApiResponse<DiskInfo[]>> {
   return client.get('/api/storage/disk_info').then((res) => res.data);
 }
 
+interface CreateDiskReq {
+  diskPath: string;
+  diskType: number;
+  remark?: string;
+}
+
+export function createDisk(data: CreateDiskReq): Promise<ApiResponse<DiskInfo>> {
+  return client.post('/api/storage/disk', data).then((res) => res.data);
+}
+
+interface UpdateDiskReq {
+  diskPath?: string;
+  diskType?: number;
+  status?: number;
+  remark?: string;
+}
+
+export function updateDisk(id: number, data: UpdateDiskReq): Promise<ApiResponse> {
+  return client.put(`/api/storage/disk/${id}`, data).then((res) => res.data);
+}
+
+export function deleteDisk(id: number): Promise<ApiResponse> {
+  return client.delete(`/api/storage/disk/${id}`).then((res) => res.data);
+}
+
 export function getSyncTask(): Promise<ApiResponse<SyncTask>> {
   return client.get('/api/storage/sync_task').then((res) => res.data);
 }

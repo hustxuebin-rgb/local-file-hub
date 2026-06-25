@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Descriptions, Empty, Form, Input, InputNumber, Select, Button, Space, Popconfirm, message, Tag, Spin } from 'antd';
-import { SyncOutlined, ReloadOutlined } from '@ant-design/icons';
-import { getDiskInfo, getSyncTask, updateSyncTask, manualSync } from '@/api';
+import { Card, Descriptions, Empty, Form, Input, InputNumber, Select, Button, Space, Popconfirm, Modal, message, Tag, Spin } from 'antd';
+import { SyncOutlined, ReloadOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { getDiskInfo, getSyncTask, updateSyncTask, manualSync, createDisk, updateDisk, deleteDisk } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
 import type { DiskInfo, SyncTask } from '@/types';
 
@@ -13,6 +13,10 @@ function DiskManagePage(): React.ReactNode {
   const [manualSyncing, setManualSyncing] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [form] = Form.useForm();
+  const [diskModalOpen, setDiskModalOpen] = useState(false);
+  const [editingDisk, setEditingDisk] = useState<DiskInfo | null>(null);
+  const [diskForm] = Form.useForm();
+  const [diskSubmitting, setDiskSubmitting] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -63,6 +67,51 @@ function DiskManagePage(): React.ReactNode {
     }
   };
 
+  const handleDiskAdd = () => {
+    setEditingDisk(null);
+    diskForm.resetFields();
+    setDiskModalOpen(true);
+  };
+
+  const handleDiskEdit = (disk: DiskInfo) => {
+    setEditingDisk(disk);
+    diskForm.setFieldsValue(disk);
+    setDiskModalOpen(true);
+  };
+
+  const handleDiskDelete = async (id: number) => {
+    try {
+      await deleteDisk(id);
+      message.success('磁盘已删除');
+      fetchData();
+    } catch (err: unknown) {
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    }
+  };
+
+  const handleDiskSubmit = async () => {
+    try {
+      const values = await diskForm.validateFields();
+      setDiskSubmitting(true);
+      if (editingDisk) {
+        await updateDisk(editingDisk.id, values);
+        message.success('磁盘已更新');
+      } else {
+        await createDisk(values);
+        message.success('磁盘已添加');
+      }
+      setDiskModalOpen(false);
+      fetchData();
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    } finally {
+      setDiskSubmitting(false);
+    }
+  };
+
   const formatSize = (size: number): string => {
     const gb = size / 1024 / 1024 / 1024;
     return `${gb.toFixed(2)} GB`;
@@ -70,9 +119,9 @@ function DiskManagePage(): React.ReactNode {
 
   const diskTypeMap: Record<number, string> = { 0: '本地', 1: 'NAS', 2: '云存储' };
   const diskStatusMap: Record<number, { color: string; text: string }> = {
-    0: { color: 'success', text: '正常' },
-    1: { color: 'warning', text: '异常' },
-    2: { color: 'error', text: '离线' },
+    0: { color: 'error', text: '离线' },
+    1: { color: 'success', text: '正常' },
+    2: { color: 'warning', text: '异常' },
   };
   const syncModeMap: Record<number, string> = { 0: '定时同步', 1: '实时同步' };
   const syncResultMap: Record<number, { color: string; text: string }> = {
@@ -91,9 +140,33 @@ function DiskManagePage(): React.ReactNode {
   return (
     <Space orientation="vertical" style={{ width: '100%' }} size="large">
       {/* 磁盘信息 */}
-      {diskList.length > 0 ? (
-        diskList.map((disk) => (
-          <Card key={disk.id} title={`磁盘 #${disk.id}`} style={{ marginBottom: 16 }}>
+      <Card
+        title="磁盘信息"
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleDiskAdd}>
+            添加磁盘
+          </Button>
+        }
+      >
+        {diskList.length > 0 ? (
+          diskList.map((disk) => (
+            <Card
+              key={disk.id}
+              title={`磁盘 #${disk.id}`}
+              style={{ marginBottom: 16 }}
+              extra={
+                <Space>
+                  <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleDiskEdit(disk)}>
+                    编辑
+                  </Button>
+                  <Popconfirm title="确认删除此磁盘？删除后相关文件记录将失效" onConfirm={() => handleDiskDelete(disk.id)}>
+                    <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              }
+            >
             <Descriptions column={2} size="small">
               <Descriptions.Item label="磁盘类型">{diskTypeMap[disk.diskType] ?? '未知'}</Descriptions.Item>
               <Descriptions.Item label="磁盘路径">{disk.diskPath}</Descriptions.Item>
@@ -112,12 +185,51 @@ function DiskManagePage(): React.ReactNode {
           </Card>
         ))
       ) : (
-        <Card title="磁盘信息">
-          <Empty description="暂无磁盘，请先配置存储盘" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        </Card>
+        <Empty description="暂无磁盘，请先配置存储盘" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       )}
 
-      {/* 同步配置 */}
+      </Card>
+
+      {/* 磁盘编辑 Modal */}
+      <Modal
+        title={editingDisk ? '编辑磁盘' : '添加磁盘'}
+        open={diskModalOpen}
+        onOk={handleDiskSubmit}
+        onCancel={() => {
+          setDiskModalOpen(false);
+          diskForm.resetFields();
+        }}
+        confirmLoading={diskSubmitting}
+      >
+        <Form form={diskForm} layout="vertical">
+          <Form.Item name="diskPath" label="磁盘路径" rules={[{ required: true, message: '请输入磁盘路径' }]}>
+            <Input placeholder="/mnt/data" />
+          </Form.Item>
+          <Form.Item name="diskType" label="磁盘类型" rules={[{ required: true, message: '请选择磁盘类型' }]}>
+            <Select
+              options={[
+                { value: 0, label: '本地' },
+                { value: 1, label: 'NAS' },
+                { value: 2, label: '云存储' },
+              ]}
+            />
+          </Form.Item>
+          {editingDisk && (
+            <Form.Item name="status" label="磁盘状态">
+              <Select
+                options={[
+                  { value: 0, label: '离线' },
+                  { value: 1, label: '正常' },
+                  { value: 2, label: '异常' },
+                ]}
+              />
+            </Form.Item>
+          )}
+          <Form.Item name="remark" label="备注">
+            <Input placeholder="可选备注" />
+          </Form.Item>
+        </Form>
+      </Modal>
       <Card
         title="同步配置"
         extra={

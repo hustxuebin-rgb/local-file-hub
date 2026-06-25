@@ -102,7 +102,7 @@ function UserManagePage(): React.ReactNode {
     const newStatus = user.status === 0 ? 1 : 0;
     try {
       await updateUser(user.id, { status: newStatus });
-      message.success(newStatus === 0 ? '已启用' : '已禁用');
+      message.success(newStatus === 0 ? '已禁用' : '已启用');
       fetchData(page);
     } catch (err: unknown) {
       const typedErr = err as { response?: { data?: { code?: number } } };
@@ -123,7 +123,7 @@ function UserManagePage(): React.ReactNode {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      render: (s: number) => (s === 0 ? <Tag color="success">启用</Tag> : <Tag color="error">禁用</Tag>),
+      render: (s: number) => (s === 0 ? <Tag color="error">禁用</Tag> : <Tag color="success">启用</Tag>),
     },
     { title: '存储配额', dataIndex: 'storageQuota', key: 'storageQuota', render: (q: number) => `${q} MB` },
     { title: '注册时间', dataIndex: 'createTime', key: 'createTime' },
@@ -136,10 +136,10 @@ function UserManagePage(): React.ReactNode {
             编辑
           </Button>
           <Popconfirm
-            title={`确认${record.status === 0 ? '禁用' : '启用'}此用户？`}
+            title={`确认${record.status === 0 ? '启用' : '禁用'}此用户？`}
             onConfirm={() => handleToggleStatus(record)}
           >
-            <Button type="link">{record.status === 0 ? '禁用' : '启用'}</Button>
+            <Button type="link">{record.status === 0 ? '启用' : '禁用'}</Button>
           </Popconfirm>
           <Popconfirm title="确认删除此用户？" onConfirm={() => handleDelete(record.id)}>
             <Button type="link" danger>

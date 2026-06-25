@@ -130,6 +130,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		storageGroup.POST("/sync/manual", storageHandler.ManualSyncHandler)
 		storageGroup.GET("/sync/logs", storageHandler.SyncLogsHandler)
 		storageGroup.GET("/quota", storageHandler.QuotaHandler)
+		storageGroup.POST("/disk", storageHandler.CreateDiskHandler)
+		storageGroup.PUT("/disk/:id", storageHandler.UpdateDiskHandler)
+		storageGroup.DELETE("/disk/:id", storageHandler.DeleteDiskHandler)
 	}
 
 	// 文件夹管理

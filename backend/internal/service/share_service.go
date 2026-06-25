@@ -231,7 +231,7 @@ func (s *ShareService) GetShareContents(shareID, userID int64) (*ShareContentsRe
 		resourceName = f.FolderName
 		folder = f
 		// 列出文件夹下所有未删除文件
-		files, _, err = s.FileRepo.FindByUserAndFolder(f.UserID, f.ID, 0, 0)
+		files, _, err = s.FileRepo.FindByUserAndFolder(f.UserID, f.ID, nil, 0, 0)
 		if err != nil {
 			return nil, err
 		}

@@ -256,8 +256,19 @@ func (h *FileHandler) List(c *gin.Context) {
 		pageSize = 20
 	}
 
-	offset := (page - 1) * pageSize
-	files, total, err := h.FileRepo.FindByUserAndFolder(userID, folderID, offset, pageSize)
+	// 解析 visibility 过滤参数（partition: 0=私有, 1=公共）
+	var visibility *int8
+	if pv := c.Query("partition"); pv != "" {
+		v, parseErr := strconv.ParseInt(pv, 10, 8)
+		if parseErr == nil {
+			val := int8(v)
+			if val == 0 || val == 1 {
+				visibility = &val
+			}
+		}
+	}
+
+	files, total, err := h.StorageService.ListFiles(userID, folderID, visibility, page, pageSize)
 	if err != nil {
 		response.Error(c, response.CodeInternal, "获取文件列表失败")
 		return

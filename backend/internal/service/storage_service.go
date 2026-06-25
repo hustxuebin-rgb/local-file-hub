@@ -186,9 +186,9 @@ func (s *StorageService) UploadFile(userID int64, srcPath, fileName string, fold
 }
 
 // ListFiles 列出用户指定目录下的文件（分页）
-func (s *StorageService) ListFiles(userID, folderID int64, page, pageSize int) ([]model.FileInfo, int64, error) {
+func (s *StorageService) ListFiles(userID, folderID int64, visibility *int8, page, pageSize int) ([]model.FileInfo, int64, error) {
 	offset := (page - 1) * pageSize
-	return s.FileRepo.FindByUserAndFolder(userID, folderID, offset, pageSize)
+	return s.FileRepo.FindByUserAndFolder(userID, folderID, visibility, offset, pageSize)
 }
 
 // GetFileInfo 获取文件信息

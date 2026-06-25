@@ -27,11 +27,15 @@ func (r *FileRepo) FindByID(id int64) (*model.FileInfo, error) {
 }
 
 // FindByUserAndFolder 查找用户指定目录下的文件（分页，不含已删除）
-func (r *FileRepo) FindByUserAndFolder(userID, folderID int64, offset, limit int) ([]model.FileInfo, int64, error) {
+func (r *FileRepo) FindByUserAndFolder(userID, folderID int64, visibility *int8, offset, limit int) ([]model.FileInfo, int64, error) {
 	var files []model.FileInfo
 	var total int64
 
 	query := r.DB.Model(&model.FileInfo{}).Where("user_id = ? AND folder_id = ? AND is_delete = 0", userID, folderID)
+
+	if visibility != nil {
+		query = query.Where("visibility = ?", *visibility)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

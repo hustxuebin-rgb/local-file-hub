@@ -81,7 +81,6 @@ function FileManager(): React.ReactNode {
   const tabsItems: TabsProps['items'] = [
     { key: '0', label: '私有文件' },
     { key: '1', label: '公共文件' },
-    { key: '2', label: '分享文件' },
   ];
 
   const handleTabChange = (key: string) => {

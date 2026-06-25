@@ -18,6 +18,7 @@ type FileInfo struct {
 	ThumbnailPath *string    `gorm:"column:thumbnail_path;type:varchar(500)" json:"thumbnailPath"`
 	PreviewPath   *string    `gorm:"column:preview_path;type:varchar(500)" json:"previewPath"`
 	SourceDevice  *int8      `gorm:"column:source_device;type:tinyint" json:"sourceDevice"`
+	Visibility    int8       `gorm:"column:visibility;type:tinyint;not null;default:0" json:"visibility"`
 	IsDelete      int8       `gorm:"column:is_delete;type:tinyint;not null;default:0" json:"isDelete"`
 	DeleteTime    *time.Time `gorm:"column:delete_time;type:datetime" json:"deleteTime"`
 	CreateTime    time.Time  `gorm:"column:create_time;type:datetime;not null;autoCreateTime" json:"createTime"`
