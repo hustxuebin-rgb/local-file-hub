@@ -14,6 +14,7 @@ import {
   Alert,
   Input,
   Switch,
+  Segmented,
 } from 'antd';
 import { InboxOutlined, ReloadOutlined, PlusOutlined } from '@ant-design/icons';
 import { uploadInit, uploadChunk, uploadMerge, uploadCancel, getTree, createFolder } from '@/api';
@@ -38,6 +39,7 @@ interface ConflictInfo {
 }
 
 function UploadPage(): React.ReactNode {
+  const [partition, setPartition] = useState<number>(0);
   const [folderTree, setFolderTree] = useState<Folder[]>([]);
   const [targetFolderId, setTargetFolderId] = useState<number | null>(null);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
@@ -59,9 +61,10 @@ function UploadPage(): React.ReactNode {
   // 使用 ref 跟踪总数，避免并发场景下的闭包陷阱
   const totalRef = useRef(0);
 
-  const loadFolderTree = async () => {
+  const loadFolderTree = async (p?: number) => {
     try {
-      const res = await getTree();
+      const isPublic = p !== undefined ? p : partition;
+      const res = await getTree({ isPublic });
       if (res.data) {
         setFolderTree(res.data);
       }
@@ -256,6 +259,9 @@ function UploadPage(): React.ReactNode {
 
   useEffect(() => {
     loadFolderTree();
+  }, [partition]);
+
+  useEffect(() => {
     return () => {
       // 组件卸载时清理冲突弹窗队列，避免 Promise 永久挂起
       while (conflictQueueRef.current.length > 0) {
@@ -321,6 +327,22 @@ function UploadPage(): React.ReactNode {
       }
     >
       <Space orientation="vertical" style={{ width: '100%' }} size="large">
+        {/* 分区选择 */}
+        <Space>
+          <Text strong>文件类型：</Text>
+          <Segmented
+            options={[
+              { label: '私有文件', value: 0 },
+              { label: '公共文件', value: 1 },
+            ]}
+            value={partition}
+            onChange={(val) => {
+              setPartition(val as number);
+              setTargetFolderId(null);
+            }}
+          />
+        </Space>
+
         {/* 目标文件夹选择 */}
         <Space>
           <Text strong>目标文件夹：</Text>

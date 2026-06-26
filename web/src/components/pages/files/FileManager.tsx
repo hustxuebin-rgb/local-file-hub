@@ -73,7 +73,7 @@ function FileManager(): React.ReactNode {
 
   useEffect(() => {
     fetchTree();
-  }, [currentPartition]);
+  }, []);
 
   useEffect(() => {
     fetchFiles({ page, pageSize });

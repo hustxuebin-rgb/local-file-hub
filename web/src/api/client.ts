@@ -21,9 +21,18 @@ client.interceptors.request.use((config) => {
 // 响应拦截器：统一错误处理
 client.interceptors.response.use(
   (res) => {
+    // 文件下载/预览返回 Blob，跳过 JSON 解析
+    if (res.config.responseType === 'blob' || res.config.responseType === 'arraybuffer') {
+      return res;
+    }
     // 后端统一返回 HTTP 200，业务状态码在 data.code 中
     const apiRes = res.data as ApiResponse<unknown> | undefined;
     if (apiRes && apiRes.code !== 200) {
+      // 认证错误：清除 token 并跳转登录
+      if (apiRes.code === 401) {
+        useAuthStore.getState().logout();
+        window.location.href = '/login';
+      }
       // 将业务错误转为 rejected promise，由调用方 catch 处理提示
       return Promise.reject({ response: { data: apiRes } });
     }

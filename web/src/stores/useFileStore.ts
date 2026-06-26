@@ -64,8 +64,8 @@ export const useFileStore = create<FileState>((set, get) => ({
 
   fetchTree: async () => {
     try {
-      const { currentPartition } = get();
-      const res = await getTree({ isPublic: currentPartition });
+      // 文件夹树不按 partition 过滤，始终展示全部文件夹
+      const res = await getTree();
       if (res.data) {
         set({ folderTree: res.data });
       }
