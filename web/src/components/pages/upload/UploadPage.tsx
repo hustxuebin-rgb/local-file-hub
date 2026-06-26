@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Card,
   Upload,
-  Select,
+  TreeSelect,
   Button,
   Table,
   Progress,
@@ -12,9 +12,11 @@ import {
   Tag,
   Modal,
   Alert,
+  Input,
+  Switch,
 } from 'antd';
-import { InboxOutlined, ReloadOutlined } from '@ant-design/icons';
-import { uploadInit, uploadChunk, uploadMerge, uploadCancel, getTree } from '@/api';
+import { InboxOutlined, ReloadOutlined, PlusOutlined } from '@ant-design/icons';
+import { uploadInit, uploadChunk, uploadMerge, uploadCancel, getTree, createFolder } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
 import type { Folder } from '@/types';
 
@@ -43,6 +45,10 @@ function UploadPage(): React.ReactNode {
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueTotal, setQueueTotal] = useState(0);
   const [conflictModal, setConflictModal] = useState<ConflictInfo | null>(null);
+  const [createFolderModalOpen, setCreateFolderModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [createFolderSubmitting, setCreateFolderSubmitting] = useState(false);
+  const [newFolderIsPublic, setNewFolderIsPublic] = useState(0);
   const chunksRef = useRef<Map<string, string>>(new Map());
   // 冲突弹窗队列：并发场景下多个文件同时冲突时排队处理
   const conflictQueueRef = useRef<Array<{
@@ -193,6 +199,39 @@ function UploadPage(): React.ReactNode {
   // 批量上传：每个文件独立创建异步任务，并发执行
   const customRequest = () => {};
 
+  // 构建 TreeSelect 所需的树形数据
+  const buildTreeData = (folders: Folder[]): any[] => {
+    return folders.map((f) => ({
+      value: f.id,
+      title: f.folderName,
+      children: f.children ? buildTreeData(f.children) : undefined,
+    }));
+  };
+
+  const treeData = buildTreeData(folderTree);
+
+  // 新建文件夹
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      message.warning('请输入文件夹名称');
+      return;
+    }
+    setCreateFolderSubmitting(true);
+    try {
+      await createFolder({ parentId: targetFolderId, folderName: newFolderName.trim(), isPublic: newFolderIsPublic });
+      message.success('文件夹创建成功');
+      setCreateFolderModalOpen(false);
+      setNewFolderName('');
+      setNewFolderIsPublic(0);
+      await loadFolderTree();
+    } catch (err: unknown) {
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    } finally {
+      setCreateFolderSubmitting(false);
+    }
+  };
+
   const handleBeforeUpload = (file: File): boolean => {
     if (!targetFolderId) {
       message.warning('请先选择目标文件夹');
@@ -225,11 +264,6 @@ function UploadPage(): React.ReactNode {
       setConflictModal(null);
     };
   }, []);
-
-  const selectOptions = folderTree.map((f) => ({
-    value: f.id,
-    label: f.folderName,
-  }));
 
   const columns = [
     { title: '文件名', dataIndex: 'fileName', key: 'fileName' },
@@ -290,14 +324,18 @@ function UploadPage(): React.ReactNode {
         {/* 目标文件夹选择 */}
         <Space>
           <Text strong>目标文件夹：</Text>
-          <Select
+          <TreeSelect
             placeholder="请选择文件夹"
             style={{ width: 280 }}
-            options={selectOptions}
+            treeData={treeData}
             value={targetFolderId}
             onChange={(val) => setTargetFolderId(val)}
             allowClear
+            treeDefaultExpandAll
           />
+          <Button icon={<PlusOutlined />} onClick={() => setCreateFolderModalOpen(true)}>
+            新建文件夹
+          </Button>
           {!targetFolderId && (
             <Text type="warning">请先选择目标文件夹后再上传文件</Text>
           )}
@@ -368,6 +406,29 @@ function UploadPage(): React.ReactNode {
           <p style={{ color: '#888', fontSize: 13 }}>
             替换将删除旧文件并上传新文件；保留两者将自动重命名新文件（如 hello(1).txt）。
           </p>
+        </Modal>
+
+        {/* 新建文件夹 Modal */}
+        <Modal
+          title="新建文件夹"
+          open={createFolderModalOpen}
+          onOk={handleCreateFolder}
+          onCancel={() => {
+            setCreateFolderModalOpen(false);
+            setNewFolderName('');
+          }}
+          confirmLoading={createFolderSubmitting}
+        >
+          <Input
+            placeholder="请输入文件夹名称"
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            onPressEnter={handleCreateFolder}
+          />
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>公共文件夹：</span>
+            <Switch checked={newFolderIsPublic === 1} onChange={(v) => setNewFolderIsPublic(v ? 1 : 0)} />
+          </div>
         </Modal>
       </Space>
     </Card>

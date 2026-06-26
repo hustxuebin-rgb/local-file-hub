@@ -25,6 +25,7 @@ type FolderHandler struct {
 type CreateFolderReq struct {
 	ParentID   int64  `json:"parentId"`
 	FolderName string `json:"folderName" binding:"required"`
+	IsPublic   *int8  `json:"isPublic"`
 }
 
 // CreateFolderResp 创建文件夹响应
@@ -92,6 +93,7 @@ func (h *FolderHandler) CreateFolder(c *gin.Context) {
 		ParentID:   req.ParentID,
 		FolderName: req.FolderName,
 		FullPath:   fullPath,
+		IsPublic:   req.IsPublic,
 		CreateTime: now,
 		UpdateTime: now,
 	}
@@ -353,7 +355,17 @@ type FolderTreeNode struct {
 func (h *FolderHandler) GetTree(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 
-	folders, err := h.FolderRepo.FindByUser(userID)
+	// 支持按可见性过滤（0=私有, 1=公共，不传则返回全部）
+	var isPublic *int8
+	if ip := c.Query("isPublic"); ip != "" {
+		v, parseErr := strconv.ParseInt(ip, 10, 8)
+		if parseErr == nil {
+			val := int8(v)
+			isPublic = &val
+		}
+	}
+
+	folders, err := h.FolderRepo.FindByUserAndPublic(userID, isPublic)
 	if err != nil {
 		response.Error(c, response.CodeInternal, "获取文件夹列表失败")
 		return
@@ -370,9 +382,10 @@ func (h *FolderHandler) GetTree(c *gin.Context) {
 		}
 	}
 
-	// 构建树结构
+	// 构建树结构（迭代有序切片保证顺序确定性，非 map）
 	var roots []*FolderTreeNode
-	for _, node := range nodeMap {
+	for i := range folders {
+		node := nodeMap[folders[i].ID]
 		if node.ParentID == 0 {
 			roots = append(roots, node)
 		} else {

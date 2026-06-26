@@ -11,10 +11,9 @@ function StoragePage(): React.ReactNode {
   }
 
   const usedSize = user.usedSize;
-  const quota = user.storageQuota; // MB
-  const quotaBytes = quota * 1024 * 1024;
-  const usedPercent = quota > 0 ? Math.round((usedSize / quotaBytes) * 100) : 0;
-  const availableBytes = Math.max(0, quotaBytes - usedSize);
+  const quota = user.storageQuota; // bytes
+  const usedPercent = quota > 0 ? Math.min(100, Math.round((usedSize / quota) * 100)) : 0;
+  const availableBytes = Math.max(0, quota - usedSize);
 
   const formatSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -29,22 +28,36 @@ function StoragePage(): React.ReactNode {
     return 'success';
   };
 
+  const getQuotaDisplay = (bytes: number) => {
+    if (bytes >= 1024 * 1024 * 1024)
+      return { value: parseFloat((bytes / 1024 / 1024 / 1024).toFixed(1)), suffix: 'GB' };
+    if (bytes >= 1024 * 1024)
+      return { value: parseFloat((bytes / 1024 / 1024).toFixed(1)), suffix: 'MB' };
+    if (bytes >= 1024)
+      return { value: parseFloat((bytes / 1024).toFixed(1)), suffix: 'KB' };
+    return { value: bytes, suffix: 'B' };
+  };
+
+  const quotaDisplay = getQuotaDisplay(quota);
+  const usedDisplay = getQuotaDisplay(usedSize);
+  const availDisplay = getQuotaDisplay(availableBytes);
+
   return (
     <Card title={<span><DatabaseOutlined /> 存储配额</span>}>
       <Row gutter={24}>
         <Col span={8}>
           <Card>
-            <Statistic title="存储配额" value={quota} suffix="MB" />
+            <Statistic title="存储配额" value={quotaDisplay.value} suffix={quotaDisplay.suffix} />
           </Card>
         </Col>
         <Col span={8}>
           <Card>
-            <Statistic title="已使用" value={formatSize(usedSize)} />
+            <Statistic title="已使用" value={usedDisplay.value} suffix={usedDisplay.suffix} />
           </Card>
         </Col>
         <Col span={8}>
           <Card>
-            <Statistic title="可用空间" value={formatSize(availableBytes)} />
+            <Statistic title="可用空间" value={availDisplay.value} suffix={availDisplay.suffix} />
           </Card>
         </Col>
       </Row>

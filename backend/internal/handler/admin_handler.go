@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
+	"time"
 
 	"local-file-hub/backend/internal/model"
 	"local-file-hub/backend/internal/repository"
@@ -20,11 +23,45 @@ type AdminHandler struct {
 	UserRepo    *repository.UserRepo
 }
 
-// UserListHandler 获取用户列表
+// UserListResp 用户列表分页响应
+type UserListResp struct {
+	List  []model.SysUser `json:"list"`
+	Total int64           `json:"total"`
+}
+
+// UserListHandler 获取用户列表（分页）
 func (h *AdminHandler) UserListHandler(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	keyword := c.Query("keyword")
+
+	query := h.DB.Model(&model.SysUser{})
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("username LIKE ? OR nickname LIKE ?", like, like)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		response.Error(c, response.CodeInternal, "查询用户总数失败")
+		return
+	}
+
 	var users []model.SysUser
-	h.DB.Find(&users)
-	response.Success(c, users)
+	offset := (page - 1) * pageSize
+	if err := query.Offset(offset).Limit(pageSize).Order("id DESC").Find(&users).Error; err != nil {
+		response.Error(c, response.CodeInternal, "查询用户列表失败")
+		return
+	}
+
+	response.Success(c, UserListResp{List: users, Total: total})
 }
 
 // AddUserReq 添加用户请求体
@@ -32,6 +69,7 @@ type AddUserReq struct {
 	Username     string `json:"username" binding:"required"`
 	Password     string `json:"password" binding:"required"`
 	Nickname     string `json:"nickname" binding:"required"`
+	Role         int8   `json:"role"`
 	StorageQuota int64  `json:"storageQuota"`
 }
 
@@ -53,7 +91,9 @@ func (h *AdminHandler) AddUserHandler(c *gin.Context) {
 		Username:     req.Username,
 		Password:     string(hashedPassword),
 		Nickname:     req.Nickname,
-		StorageQuota: req.StorageQuota,
+		Role:         req.Role,
+		StorageQuota: req.StorageQuota * 1024 * 1024, // 前端传MB，转为bytes存储
+		StorageRoot:  fmt.Sprintf("user_%s_%d", req.Username, time.Now().UnixNano()),
 	}
 
 	if err := h.UserRepo.Create(user); err != nil {
@@ -64,13 +104,30 @@ func (h *AdminHandler) AddUserHandler(c *gin.Context) {
 	response.SuccessWithMsg(c, "用户创建成功", nil)
 }
 
-// UpdateUserHandler 更新用户（白名单模式，仅允许修改 nickname/storageQuota/status）
+// UpdateUserHandler 更新用户（白名单模式，仅允许修改 nickname/storageQuota/status/role）
 func (h *AdminHandler) UpdateUserHandler(c *gin.Context) {
-	userID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, response.CodeBadRequest, "用户ID格式错误")
+		return
+	}
+
+	// 校验用户是否存在
+	var existing model.SysUser
+	if err := h.DB.First(&existing, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, response.CodeNotFound, "用户不存在")
+			return
+		}
+		response.Error(c, response.CodeInternal, "查询用户失败")
+		return
+	}
+
 	var req struct {
 		Nickname     *string `json:"nickname"`
 		StorageQuota *int64  `json:"storageQuota"`
 		Status       *int8   `json:"status"`
+		Role         *int8   `json:"role"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, response.CodeBadRequest, "参数错误")
@@ -82,16 +139,27 @@ func (h *AdminHandler) UpdateUserHandler(c *gin.Context) {
 		updates["nickname"] = *req.Nickname
 	}
 	if req.StorageQuota != nil {
-		updates["storage_quota"] = *req.StorageQuota
+		updates["storage_quota"] = *req.StorageQuota * 1024 * 1024 // 前端传MB，转为bytes存储
 	}
 	if req.Status != nil {
 		updates["status"] = *req.Status
+	}
+	if req.Role != nil {
+		updates["role"] = *req.Role
 	}
 	if len(updates) == 0 {
 		response.Error(c, response.CodeBadRequest, "没有需要更新的字段")
 		return
 	}
-	h.DB.Model(&model.SysUser{}).Where("id = ?", userID).Updates(updates)
+	result := h.DB.Model(&model.SysUser{}).Where("id = ?", userID).Updates(updates)
+	if result.Error != nil {
+		response.Error(c, response.CodeInternal, "更新用户失败")
+		return
+	}
+	if result.RowsAffected == 0 {
+		response.Error(c, response.CodeNotFound, "用户不存在")
+		return
+	}
 	response.SuccessWithMsg(c, "更新成功", nil)
 }
 

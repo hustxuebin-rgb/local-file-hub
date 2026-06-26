@@ -64,7 +64,8 @@ export const useFileStore = create<FileState>((set, get) => ({
 
   fetchTree: async () => {
     try {
-      const res = await getTree();
+      const { currentPartition } = get();
+      const res = await getTree({ isPublic: currentPartition });
       if (res.data) {
         set({ folderTree: res.data });
       }

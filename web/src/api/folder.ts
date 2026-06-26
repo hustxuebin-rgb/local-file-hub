@@ -12,6 +12,7 @@ export function listFolders(parentId: number | null): Promise<ApiResponse<Folder
 export function createFolder(data: {
   parentId: number | null;
   folderName: string;
+  isPublic?: number;
 }): Promise<ApiResponse> {
   return client.post('/api/folder', data).then((res) => res.data);
 }
@@ -32,6 +33,6 @@ export function deleteFolder(id: number): Promise<ApiResponse> {
 }
 
 /** 获取文件夹树形结构 */
-export function getTree(): Promise<ApiResponse<Folder[]>> {
-  return client.get('/api/folder/tree').then((res) => res.data);
+export function getTree(params?: { isPublic?: number }): Promise<ApiResponse<Folder[]>> {
+  return client.get('/api/folder/tree', { params }).then((res) => res.data);
 }

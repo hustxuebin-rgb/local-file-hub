@@ -66,6 +66,18 @@ func (r *FolderRepo) DeleteByUserAndID(userID, id int64) error {
 	return r.DB.Where("user_id = ? AND id = ?", userID, id).Delete(&model.Folder{}).Error
 }
 
+// FindByUserAndPublic 按用户和可见性查找文件夹（用于构建树）
+// isPublic 为 nil 时不过滤
+func (r *FolderRepo) FindByUserAndPublic(userID int64, isPublic *int8) ([]model.Folder, error) {
+	var folders []model.Folder
+	query := r.DB.Where("user_id = ?", userID)
+	if isPublic != nil {
+		query = query.Where("is_public = ?", *isPublic)
+	}
+	err := query.Order("sort ASC, id ASC").Find(&folders).Error
+	return folders, err
+}
+
 // CountByUser 统计用户文件夹总数
 func (r *FolderRepo) CountByUser(userID int64) (int64, error) {
 	var count int64

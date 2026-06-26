@@ -61,7 +61,10 @@ function UserManagePage(): React.ReactNode {
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
-    form.setFieldsValue(user);
+    form.setFieldsValue({
+      ...user,
+      storageQuota: user.storageQuota ? Math.round(user.storageQuota / 1024 / 1024) : 0,
+    });
     setModalOpen(true);
   };
 
@@ -70,7 +73,8 @@ function UserManagePage(): React.ReactNode {
       const values = await form.validateFields();
       setSubmitting(true);
       if (editingUser) {
-        await updateUser(editingUser.id, values);
+        const { username, password, ...updateFields } = values;
+        await updateUser(editingUser.id, updateFields);
         message.success('更新成功');
       } else {
         await addUser(values);
@@ -110,6 +114,13 @@ function UserManagePage(): React.ReactNode {
     }
   };
 
+  const formatQuota = (bytes: number): string => {
+    if (!bytes || bytes <= 0) return '0 B';
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  };
+
   const columns: TableProps<User>['columns'] = [
     { title: '用户名', dataIndex: 'username', key: 'username' },
     { title: '昵称', dataIndex: 'nickname', key: 'nickname' },
@@ -125,7 +136,7 @@ function UserManagePage(): React.ReactNode {
       key: 'status',
       render: (s: number) => (s === 0 ? <Tag color="error">禁用</Tag> : <Tag color="success">启用</Tag>),
     },
-    { title: '存储配额', dataIndex: 'storageQuota', key: 'storageQuota', render: (q: number) => `${q} MB` },
+    { title: '存储配额', dataIndex: 'storageQuota', key: 'storageQuota', render: (q: number) => formatQuota(q) },
     { title: '注册时间', dataIndex: 'createTime', key: 'createTime' },
     {
       title: '操作',

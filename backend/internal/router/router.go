@@ -6,7 +6,6 @@ import (
 	"local-file-hub/backend/internal/middleware"
 	"local-file-hub/backend/internal/repository"
 	"local-file-hub/backend/internal/service"
-	"local-file-hub/backend/internal/ws"
 	"local-file-hub/backend/pkg/response"
 
 	"gorm.io/gorm"
@@ -79,7 +78,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		DB:             db,
 	}
 
-	wsHub := ws.NewHub()
+	miniappHandler := &handler.MiniappHandler{StorageService: storageService}
 
 	logHandler := &handler.LogHandler{DB: db}
 	mediaHandler := &handler.MediaHandler{FileRepo: fileRepo}
@@ -88,7 +87,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		AuthService: authService,
 		UserRepo:    userRepo,
 	}
-	miniappHandler := &handler.MiniappHandler{StorageService: storageService}
 
 	// 注册全局中间件链：CORS → Logger → Auth
 	r.Use(middleware.Cors())
@@ -188,11 +186,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		shareGroup.PUT("/:id", shareHandler.UpdateHandler)
 		shareGroup.DELETE("/:id", shareHandler.CancelHandler)
 	}
-
-	// WebSocket
-	r.GET("/ws", func(c *gin.Context) {
-		wsHub.HandleWS(cfg.JWT.Secret, deviceRepo)(c.Writer, c.Request)
-	})
 
 	// 用户管理（需admin权限）
 	userGroup := r.Group("/api/user")

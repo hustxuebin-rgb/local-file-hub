@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"syscall"
@@ -19,13 +20,44 @@ type StorageHandler struct {
 	DB             *gorm.DB
 }
 
-// DiskInfoHandler 获取磁盘信息
+// DiskInfoHandler 获取磁盘信息（实时刷新文件系统状态）
 func (h *StorageHandler) DiskInfoHandler(c *gin.Context) {
 	var disks []model.StorageDisk
 	if err := h.DB.Find(&disks).Error; err != nil {
 		response.Error(c, response.CodeInternal, "获取磁盘信息失败")
 		return
 	}
+
+	// 遍历刷新每个磁盘的实际文件系统状态
+	for i := range disks {
+		var stat syscall.Statfs_t
+		if err := syscall.Statfs(disks[i].DiskPath, &stat); err != nil {
+			// 路径不可访问，标记为离线
+			disks[i].Status = 0
+			if err := h.DB.Model(&disks[i]).Update("status", int8(0)).Error; err != nil {
+				log.Printf("更新磁盘 %s 离线状态失败: %v", disks[i].DiskPath, err)
+			}
+			continue
+		}
+		totalSize := int64(stat.Blocks) * int64(stat.Bsize)
+		availableSize := int64(stat.Bavail) * int64(stat.Bsize)
+		usedSize := totalSize - availableSize
+
+		// 更新磁盘信息
+		if err := h.DB.Model(&disks[i]).Updates(map[string]interface{}{
+			"total_size":     totalSize,
+			"used_size":      usedSize,
+			"available_size": availableSize,
+			"status":         int8(1),
+		}).Error; err != nil {
+			log.Printf("更新磁盘 %s 信息失败: %v", disks[i].DiskPath, err)
+		}
+		disks[i].TotalSize = totalSize
+		disks[i].UsedSize = usedSize
+		disks[i].AvailableSize = availableSize
+		disks[i].Status = 1
+	}
+
 	response.Success(c, disks)
 }
 

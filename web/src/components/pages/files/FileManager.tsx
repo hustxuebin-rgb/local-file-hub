@@ -42,6 +42,7 @@ import {
 } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
 import type { FileInfo, Folder } from '@/types';
+import { downloadFile, previewFile } from '@/api/file';
 
 const { DirectoryTree } = Tree;
 
@@ -111,6 +112,7 @@ function FileManager(): React.ReactNode {
       await createFolder({
         parentId: currentFolderId,
         folderName: newFolderName.trim(),
+        isPublic: currentPartition,
       });
       message.success('创建成功');
       setCreateModalOpen(false);
@@ -150,6 +152,37 @@ function FileManager(): React.ReactNode {
       message.success('删除成功');
       fetchTree();
       fetchFiles({ page, pageSize });
+    } catch (err: unknown) {
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    }
+  };
+
+  const handleDownloadFile = async (id: number, fileName: string) => {
+    try {
+      const blob = await downloadFile(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // 延迟释放 Blob URL，给浏览器足够时间开始下载
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err: unknown) {
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    }
+  };
+
+  const handlePreviewFile = async (id: number) => {
+    try {
+      const blob = await previewFile(id);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      // 延迟释放 Blob URL，给浏览器足够时间加载
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err: unknown) {
       const typedErr = err as { response?: { data?: { code?: number } } };
       message.error(getErrorMessage(typedErr.response?.data?.code));
@@ -209,10 +242,10 @@ function FileManager(): React.ReactNode {
       width: 200,
       render: (_: unknown, record: FileInfo) => (
         <Space>
-          <Button type="link" size="small" icon={<DownloadOutlined />}>
+          <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => handleDownloadFile(record.id, record.fileName)}>
             下载
           </Button>
-          <Button type="link" size="small" icon={<EyeOutlined />}>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handlePreviewFile(record.id)}>
             预览
           </Button>
           <Popconfirm
