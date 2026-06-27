@@ -13,6 +13,7 @@ export interface User {
   storageQuota: number;
   usedSize: number;
   avatarUrl?: string;
+  diskId?: number;
   status: number;
   createTime: string;
 }
@@ -129,6 +130,23 @@ export interface OperationLog {
   createTime: string;
 }
 
+export interface MountInfo {
+  mountPoint: string;
+  device: string;
+  fsType: string;
+}
+
+export interface DirEntry {
+  name: string;
+  path: string;
+}
+
+export interface DiskSimple {
+  id: number;
+  diskPath: string;
+  diskType: number;
+}
+
 export const FILE_TYPE_MAP: Record<number, string> = {
   0: '其他',
   1: '图片',
@@ -146,3 +164,40 @@ export const DEVICE_TYPE_MAP: Record<number, string> = {
   1: 'Web浏览器',
   2: '微信小程序',
 };
+
+// ========== 收藏 ==========
+
+export interface Favorite {
+  id: number;
+  targetType: number; // 1=文件, 2=文件夹, 3=分享
+  targetId: number;
+  targetName: string;
+  targetSize: number;
+  ownerName: string;
+  createTime: string;
+}
+
+// ========== 公共文件（含上传者） ==========
+
+export interface PublicFile extends FileInfo {
+  uploaderName?: string;
+}
+
+// ========== 视图模式 ==========
+
+export type ViewMode = 'list' | 'grid';
+
+// ========== 排序选项 ==========
+
+export interface SortOption {
+  field: 'name' | 'fileSize' | 'fileType' | 'createTime';
+  order: 'asc' | 'desc';
+}
+
+// ========== 文件分类 ==========
+
+export interface FileCategory {
+  key: string;
+  label: string;
+  fileType?: number;
+}

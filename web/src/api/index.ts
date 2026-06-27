@@ -38,7 +38,22 @@ export {
   getShareContents,
   updateShare,
   cancelShare,
+  batchCreateShare,
 } from './share';
+
+export {
+  addFavorite,
+  removeFavorite,
+  listFavorites,
+} from './favorite';
+
+export {
+  listPublicFiles,
+} from './public';
+
+export {
+  getMyLogs,
+} from './log';
 
 export {
   getUsers,
@@ -56,4 +71,9 @@ export {
   getSyncLogs,
   getWarnLogs,
   readWarns,
+  scanMounts,
+  browseDirs,
+  createDir,
+  deleteDir,
+  getDiskSimple,
 } from './admin';

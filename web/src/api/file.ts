@@ -6,6 +6,10 @@ import type { ApiResponse, FileInfo } from '@/types';
 interface ListFilesParams {
   folderId?: number | null;
   partition?: number;
+  keyword?: string;
+  fileType?: number;
+  sortBy?: string;
+  sortOrder?: string;
   page?: number;
   pageSize?: number;
 }

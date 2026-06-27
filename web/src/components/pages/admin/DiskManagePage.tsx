@@ -4,6 +4,7 @@ import { SyncOutlined, ReloadOutlined, PlusOutlined, EditOutlined, DeleteOutline
 import { getDiskInfo, getSyncTask, updateSyncTask, manualSync, createDisk, updateDisk, deleteDisk } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
 import type { DiskInfo, SyncTask } from '@/types';
+import FolderPicker from '@/components/shared/FolderPicker';
 
 function DiskManagePage(): React.ReactNode {
   const [diskList, setDiskList] = useState<DiskInfo[]>([]);
@@ -202,8 +203,8 @@ function DiskManagePage(): React.ReactNode {
         confirmLoading={diskSubmitting}
       >
         <Form form={diskForm} layout="vertical">
-          <Form.Item name="diskPath" label="磁盘路径" rules={[{ required: true, message: '请输入磁盘路径' }]}>
-            <Input placeholder="/mnt/data" />
+          <Form.Item name="diskPath" label="磁盘路径" rules={[{ required: true, message: '请选择磁盘路径' }]}>
+            <FolderPicker placeholder="选择存储路径" />
           </Form.Item>
           <Form.Item name="diskType" label="磁盘类型" rules={[{ required: true, message: '请选择磁盘类型' }]}>
             <Select

@@ -12,6 +12,9 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   SafetyCertificateOutlined,
+  GlobalOutlined,
+  StarOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { logout as logoutApi } from '@/api';
@@ -40,6 +43,9 @@ function MainLayout(): React.ReactNode {
     const items: MenuItem[] = [
       { key: '/files', icon: <FolderOpenOutlined />, label: '文件管理' },
       { key: '/upload', icon: <UploadOutlined />, label: '上传文件' },
+      { key: '/public', icon: <GlobalOutlined />, label: '公共空间' },
+      { key: '/favorites', icon: <StarOutlined />, label: '我的收藏' },
+      { key: '/logs', icon: <HistoryOutlined />, label: '操作记录' },
       { key: '/share/my', icon: <ShareAltOutlined />, label: '我的分享' },
       { key: '/share/received', icon: <ShareAltOutlined />, label: '收到的分享' },
       { key: '/recycle', icon: <DeleteOutlined />, label: '回收站' },

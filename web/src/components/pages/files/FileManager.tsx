@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card,
@@ -29,6 +29,7 @@ import {
   ShareAltOutlined,
   MoreOutlined,
   ReloadOutlined,
+  StarOutlined,
 } from '@ant-design/icons';
 import { useFileStore } from '@/stores/useFileStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -39,10 +40,19 @@ import {
   renameFolder,
   deleteFolder,
   deleteFile,
+  addFavorite,
 } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
-import type { FileInfo, Folder } from '@/types';
+import type { FileInfo, Folder, SortOption } from '@/types';
 import { downloadFile, previewFile } from '@/api/file';
+import { useViewStore } from '@/stores/useViewStore';
+import FileSearchBar from '@/components/shared/FileSearchBar';
+import FileCategoryTabs from '@/components/shared/FileCategoryTabs';
+import FileSortDropdown from '@/components/shared/FileSortDropdown';
+import FileViewToggle from '@/components/shared/FileViewToggle';
+import FileGridView from '@/components/shared/FileGridView';
+import BatchShareModal from '@/components/shared/BatchShareModal';
+import ShareFileModal from '@/components/shared/ShareFileModal';
 
 const { DirectoryTree } = Tree;
 
@@ -71,13 +81,30 @@ function FileManager(): React.ReactNode {
   const [pageSize] = useState(50);
   const [submitting, setSubmitting] = useState(false);
 
+  // 新增：搜索/分类/排序/视图状态
+  const { viewMode } = useViewStore();
+  const [keyword, setKeyword] = useState('');
+  const [categoryKey, setCategoryKey] = useState('all');
+  const [fileType, setFileType] = useState<number | undefined>(undefined);
+  const [sort, setSort] = useState<SortOption>({ field: 'name', order: 'asc' });
+  const [batchShareOpen, setBatchShareOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareResource, setShareResource] = useState<{ id: number; shareType: number; resourceName?: string } | null>(null);
+
   useEffect(() => {
     fetchTree();
   }, []);
 
   useEffect(() => {
-    fetchFiles({ page, pageSize });
-  }, [currentFolderId, currentPartition, page]);
+    fetchFiles({
+      page,
+      pageSize,
+      keyword: keyword || undefined,
+      fileType,
+      sortBy: sort.field === 'name' ? 'fileName' : sort.field === 'fileSize' ? 'fileSize' : 'createTime',
+      sortOrder: sort.order,
+    });
+  }, [currentFolderId, currentPartition, page, keyword, fileType, sort]);
 
   const tabsItems: TabsProps['items'] = [
     { key: '0', label: '私有文件' },
@@ -200,6 +227,50 @@ function FileManager(): React.ReactNode {
     }
   };
 
+  const handleFavorite = async (id: number) => {
+    try {
+      await addFavorite({ targetType: 1, targetId: id });
+      message.success('收藏成功');
+    } catch (err: unknown) {
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    }
+  };
+
+  const handleShareFile = (record: FileInfo) => {
+    setShareResource({ id: record.id, shareType: 1, resourceName: record.fileName });
+    setShareModalOpen(true);
+  };
+
+  const handleFolderAction = (key: string, folder: Folder) => {
+    if (key === 'rename') {
+      setRenameTarget(folder);
+      setNewRename(folder.folderName);
+      setRenameModalOpen(true);
+    } else if (key === 'share') {
+      setShareResource({ id: folder.id, shareType: 2, resourceName: folder.folderName });
+      setShareModalOpen(true);
+    } else if (key === 'delete') {
+      handleDeleteFolder(folder.id);
+    }
+  };
+
+  const handleSearch = useCallback((kw: string) => {
+    setKeyword(kw);
+    setPage(1);
+  }, []);
+
+  const handleCategoryChange = useCallback((_key: string, ft?: number) => {
+    setCategoryKey(_key);
+    setFileType(ft);
+    setPage(1);
+  }, []);
+
+  const handleSortChange = useCallback((s: SortOption) => {
+    setSort(s);
+    setPage(1);
+  }, []);
+
   const columns: TableProps<FileInfo>['columns'] = [
     {
       title: '文件名',
@@ -239,7 +310,7 @@ function FileManager(): React.ReactNode {
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 280,
       render: (_: unknown, record: FileInfo) => (
         <Space>
           <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => handleDownloadFile(record.id, record.fileName)}>
@@ -247,6 +318,12 @@ function FileManager(): React.ReactNode {
           </Button>
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handlePreviewFile(record.id)}>
             预览
+          </Button>
+          <Button type="link" size="small" icon={<StarOutlined />} onClick={() => handleFavorite(record.id)}>
+            收藏
+          </Button>
+          <Button type="link" size="small" icon={<ShareAltOutlined />} onClick={() => handleShareFile(record)}>
+            分享
           </Button>
           <Popconfirm
             title="确认删除此文件？"
@@ -266,7 +343,21 @@ function FileManager(): React.ReactNode {
   const buildFolderTree = (nodes: Folder[]): TreeProps['treeData'] => {
     return nodes.map((f) => ({
       key: f.id,
-      title: f.folderName,
+      title: (
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'rename', label: '重命名', icon: <EditOutlined /> },
+              { key: 'share', label: '分享', icon: <ShareAltOutlined /> },
+              { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true },
+            ],
+            onClick: ({ key }) => handleFolderAction(key, f),
+          }}
+          trigger={['contextMenu']}
+        >
+          <span>{f.folderName}</span>
+        </Dropdown>
+      ),
       icon: <FolderOutlined />,
       children: f.children ? buildFolderTree(f.children) : [],
     }));
@@ -290,6 +381,22 @@ function FileManager(): React.ReactNode {
     >
       <Tabs activeKey={String(currentPartition)} items={tabsItems} onChange={handleTabChange} />
 
+      {/* 工具栏：搜索 + 分类 + 排序 + 视图切换 + 批量分享 */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+        <FileSearchBar onSearch={handleSearch} placeholder="搜索文件" />
+        <FileSortDropdown value={sort} onChange={handleSortChange} />
+        <FileViewToggle />
+        {selectedRows.length > 0 && (
+          <Button
+            type="primary"
+            icon={<ShareAltOutlined />}
+            onClick={() => setBatchShareOpen(true)}
+          >
+            批量分享 ({selectedRows.length})
+          </Button>
+        )}
+      </div>
+
       <div style={{ display: 'flex', gap: 16 }}>
         <div style={{ width: 240, minWidth: 240 }}>
           <Card title="文件夹" size="small">
@@ -305,28 +412,67 @@ function FileManager(): React.ReactNode {
           </Card>
         </div>
         <div style={{ flex: 1 }}>
-          <Table<FileInfo>
-            rowKey="id"
-            columns={columns}
-            dataSource={fileList}
-            loading={loading}
-            pagination={{
-              current: page,
-              pageSize,
-              total,
-              onChange: (p) => {
-                setPage(p);
-                fetchFiles({ page: p, pageSize });
-              },
-              showSizeChanger: false,
-            }}
-            rowSelection={{
-              selectedRowKeys: selectedRows.map((r) => r.id),
-              onChange: (_keys, rows) => setSelectedRows(rows),
-            }}
-          />
+          <FileCategoryTabs activeKey={categoryKey} onChange={handleCategoryChange} />
+          {viewMode === 'list' ? (
+            <Table<FileInfo>
+              rowKey="id"
+              columns={columns}
+              dataSource={fileList}
+              loading={loading}
+              pagination={{
+                current: page,
+                pageSize,
+                total,
+                onChange: (p) => {
+                  setPage(p);
+                  fetchFiles({ page: p, pageSize });
+                },
+                showSizeChanger: false,
+              }}
+              rowSelection={{
+                selectedRowKeys: selectedRows.map((r) => r.id),
+                onChange: (_keys, rows) => setSelectedRows(rows),
+              }}
+            />
+          ) : (
+            <FileGridView
+              files={fileList}
+              loading={loading}
+              onDownload={(file) => handleDownloadFile((file as FileInfo).id, (file as FileInfo).fileName)}
+              onPreview={(file) => handlePreviewFile((file as FileInfo).id)}
+              onFavorite={(file) => handleFavorite((file as FileInfo).id)}
+            />
+          )}
         </div>
       </div>
+
+      {/* 批量分享 Modal */}
+      <BatchShareModal
+        open={batchShareOpen}
+        selectedFiles={selectedRows}
+        onClose={() => setBatchShareOpen(false)}
+        onSuccess={() => {
+          setSelectedRows([]);
+          fetchFiles({ page, pageSize });
+        }}
+      />
+
+      {/* 单文件/文件夹分享 Modal */}
+      {shareResource && (
+        <ShareFileModal
+          open={shareModalOpen}
+          resourceId={shareResource.id}
+          shareType={shareResource.shareType}
+          resourceName={shareResource.resourceName}
+          onClose={() => {
+            setShareModalOpen(false);
+            setShareResource(null);
+          }}
+          onSuccess={() => {
+            fetchFiles({ page, pageSize });
+          }}
+        />
+      )}
 
       {/* 新建文件夹 Modal */}
       <Modal

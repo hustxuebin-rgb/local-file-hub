@@ -1,5 +1,5 @@
 import client from './client';
-import type { ApiResponse, User, DiskInfo, SyncTask, OperationLog, WarnLog } from '@/types';
+import type { ApiResponse, User, DiskInfo, SyncTask, OperationLog, WarnLog, MountInfo, DirEntry, DiskSimple } from '@/types';
 
 /* ========== 用户管理 ========== */
 
@@ -22,6 +22,7 @@ interface AddUserReq {
   nickname: string;
   role: number;
   storageQuota: number;
+  diskId?: number;
 }
 
 export function addUser(data: AddUserReq): Promise<ApiResponse> {
@@ -32,6 +33,7 @@ interface UpdateUserReq {
   nickname?: string;
   role?: number;
   storageQuota?: number;
+  diskId?: number;
   status?: number;
 }
 
@@ -117,6 +119,28 @@ export function getWarnLogs(params: {
 
 export function readWarns(ids: number[]): Promise<ApiResponse> {
   return client.post('/api/log/warn/read', { ids }).then((res) => res.data);
+}
+
+/* ========== 磁盘扫描与目录操作 ========== */
+
+export function scanMounts(): Promise<ApiResponse<MountInfo[]>> {
+  return client.get('/api/storage/scan_mounts').then((res) => res.data);
+}
+
+export function browseDirs(path: string): Promise<ApiResponse<DirEntry[]>> {
+  return client.get('/api/storage/browse_dirs', { params: { path } }).then((res) => res.data);
+}
+
+export function createDir(parentPath: string, dirName: string): Promise<ApiResponse> {
+  return client.post('/api/storage/dir', { parentPath, dirName }).then((res) => res.data);
+}
+
+export function deleteDir(path: string): Promise<ApiResponse> {
+  return client.delete('/api/storage/dir', { data: { path } }).then((res) => res.data);
+}
+
+export function getDiskSimple(): Promise<ApiResponse<DiskSimple[]>> {
+  return client.get('/api/storage/disk_simple').then((res) => res.data);
 }
 
 /* ========== 服务器状态 ========== */

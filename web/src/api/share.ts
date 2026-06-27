@@ -55,3 +55,21 @@ export function updateShare(id: number, data: UpdateShareReq): Promise<ApiRespon
 export function cancelShare(id: number): Promise<ApiResponse> {
   return client.delete(`/api/share/${id}`).then((res) => res.data);
 }
+
+/* ========== 批量分享 ========== */
+
+interface BatchShareItem {
+  resourceId: number;
+  shareType: number;
+  receiveUserId: number;
+  sharePerm: number;
+  expireType: number;
+}
+
+interface BatchShareReq {
+  items: BatchShareItem[];
+}
+
+export function batchCreateShare(data: BatchShareReq): Promise<ApiResponse> {
+  return client.post('/api/share/batch', data).then((res) => res.data);
+}

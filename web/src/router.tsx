@@ -16,6 +16,9 @@ import SyncLogsPage from '@/components/pages/admin/SyncLogsPage';
 import AlertsPage from '@/components/pages/admin/AlertsPage';
 import ProfilePage from '@/components/pages/center/ProfilePage';
 import StoragePage from '@/components/pages/center/StoragePage';
+import PublicSpace from '@/components/pages/public/PublicSpace';
+import FavoritesPage from '@/components/pages/favorites/FavoritesPage';
+import OperationLogsPage from '@/components/pages/logs/OperationLogsPage';
 
 /**
  * 应用路由定义
@@ -51,6 +54,9 @@ function AppRoutes(): React.ReactNode {
         <Route element={<MainLayout />}>
           <Route path="files" element={<FileManager />} />
           <Route path="upload" element={<UploadPage />} />
+          <Route path="public" element={<PublicSpace />} />
+          <Route path="favorites" element={<FavoritesPage />} />
+          <Route path="logs" element={<OperationLogsPage />} />
           <Route path="share/my" element={<ShareMyPage />} />
           <Route path="share/received" element={<ShareReceivedPage />} />
           <Route path="recycle" element={<RecyclePage />} />

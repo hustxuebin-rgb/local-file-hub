@@ -21,7 +21,14 @@ interface FileState {
   /** 设置当前文件夹 ID */
   setFolderId: (id: number | null) => void;
   /** 获取文件列表 */
-  fetchFiles: (params?: { page?: number; pageSize?: number }) => Promise<void>;
+  fetchFiles: (params?: {
+    page?: number;
+    pageSize?: number;
+    keyword?: string;
+    fileType?: number;
+    sortBy?: string;
+    sortOrder?: string;
+  }) => Promise<void>;
   /** 获取文件夹树 */
   fetchTree: () => Promise<void>;
 }
@@ -44,7 +51,14 @@ export const useFileStore = create<FileState>((set, get) => ({
     get().fetchFiles();
   },
 
-  fetchFiles: async (params?: { page?: number; pageSize?: number }) => {
+  fetchFiles: async (params?: {
+    page?: number;
+    pageSize?: number;
+    keyword?: string;
+    fileType?: number;
+    sortBy?: string;
+    sortOrder?: string;
+  }) => {
     const { currentPartition, currentFolderId } = get();
     set({ loading: true });
     try {
@@ -53,6 +67,10 @@ export const useFileStore = create<FileState>((set, get) => ({
         folderId: currentFolderId,
         page: params?.page ?? 1,
         pageSize: params?.pageSize ?? 50,
+        keyword: params?.keyword,
+        fileType: params?.fileType,
+        sortBy: params?.sortBy,
+        sortOrder: params?.sortOrder,
       });
       if (res.data) {
         set({ fileList: res.data.list, total: res.data.total });

@@ -15,9 +15,9 @@ import {
 } from 'antd';
 import type { TableProps } from 'antd';
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
-import { getUsers, addUser, updateUser, deleteUser } from '@/api';
+import { getUsers, addUser, updateUser, deleteUser, getDiskSimple } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
-import type { User } from '@/types';
+import type { User, DiskSimple } from '@/types';
 
 function UserManagePage(): React.ReactNode {
   const [data, setData] = useState<User[]>([]);
@@ -30,6 +30,7 @@ function UserManagePage(): React.ReactNode {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  const [diskOptions, setDiskOptions] = useState<DiskSimple[]>([]);
 
   const fetchData = async (p = page, kw = keyword) => {
     setLoading(true);
@@ -46,7 +47,19 @@ function UserManagePage(): React.ReactNode {
 
   useEffect(() => {
     fetchData(1, '');
+    fetchDiskList();
   }, []);
+
+  const fetchDiskList = async () => {
+    try {
+      const res = await getDiskSimple();
+      if (res.data) {
+        setDiskOptions(res.data);
+      }
+    } catch {
+      // 静默失败，磁盘选择为可选功能
+    }
+  };
 
   const handleSearch = () => {
     setPage(1);
@@ -233,6 +246,14 @@ function UserManagePage(): React.ReactNode {
           </Form.Item>
           <Form.Item name="storageQuota" label="存储配额 (MB)" rules={[{ required: true }]}>
             <InputNumber min={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="diskId" label="存储磁盘">
+            <Select
+              allowClear
+              placeholder="自动选择（使用默认磁盘）"
+              options={diskOptions}
+              fieldNames={{ label: 'diskPath', value: 'id' }}
+            />
           </Form.Item>
         </Form>
       </Modal>
