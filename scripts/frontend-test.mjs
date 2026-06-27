@@ -5,8 +5,8 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE_URL = 'http://localhost:5174';
-const SCREENSHOT_DIR = path.resolve(__dirname, '../reports/frontend-test-screenshots');
-const REPORT_PATH = path.resolve(__dirname, '../reports/frontend-test-report.md');
+const SCREENSHOT_DIR = path.resolve(__dirname, '../docs/reports/frontend-test-screenshots');
+const REPORT_PATH = path.resolve(__dirname, '../docs/reports/frontend-test-report.md');
 
 // Ensure screenshot directory exists
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
