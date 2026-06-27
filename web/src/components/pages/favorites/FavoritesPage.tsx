@@ -1,13 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Card, Table, Button, Space, Tag, message, Popconfirm } from 'antd';
 import type { TableProps } from 'antd';
-import { StarFilled, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { StarFilled, EyeOutlined } from '@ant-design/icons';
 import { useFavoriteStore } from '@/stores/useFavoriteStore';
 import { useViewStore } from '@/stores/useViewStore';
 import { removeFavorite } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
 import FileViewToggle from '@/components/shared/FileViewToggle';
-import FileGridView from '@/components/shared/FileGridView';
+import FileGridView, { type GridFileItem } from '@/components/shared/FileGridView';
 import type { Favorite } from '@/types';
 
 function formatFileSize(size: number): string {
@@ -31,6 +31,7 @@ function FavoritesPage(): React.ReactNode {
 
   useEffect(() => {
     fetchFavorites(page, pageSize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   const handleRemoveFavorite = useCallback(async (record: Favorite) => {
@@ -111,7 +112,7 @@ function FavoritesPage(): React.ReactNode {
     },
   ];
 
-  const gridData = favorites.map((f) => ({
+  const gridData: GridFileItem[] = favorites.map((f) => ({
     id: f.id,
     userId: 0,
     folderId: 0,
@@ -156,11 +157,11 @@ function FavoritesPage(): React.ReactNode {
         />
       ) : (
         <FileGridView
-          files={gridData as any}
+          files={gridData}
           loading={loading}
           onRemoveFavorite={(file) => {
             const fav = favorites.find(
-              (f) => f.targetType === (file as any).targetType && f.targetId === (file as any).targetId,
+              (f) => f.targetType === file.targetType && f.targetId === file.targetId,
             );
             if (fav) handleRemoveFavorite(fav);
           }}

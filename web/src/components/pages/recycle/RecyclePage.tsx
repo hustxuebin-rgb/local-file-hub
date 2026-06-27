@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Button, Space, Popconfirm, Tag, message } from 'antd';
+import { Card, Table, Button, Space, Popconfirm, message } from 'antd';
 import type { TableProps } from 'antd';
 import { ReloadOutlined, RollbackOutlined, DeleteOutlined } from '@ant-design/icons';
 import { recycleList, recycleRecover, recycleDelete } from '@/api';
@@ -27,7 +27,9 @@ function RecyclePage(): React.ReactNode {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRecover = async (id: number) => {

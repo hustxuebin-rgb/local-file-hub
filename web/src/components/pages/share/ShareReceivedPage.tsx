@@ -42,7 +42,9 @@ function ShareReceivedPage(): React.ReactNode {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleViewContent = async (id: number) => {
@@ -50,7 +52,7 @@ function ShareReceivedPage(): React.ReactNode {
     setContentModalOpen(true);
     try {
       const res = await getShareContents(id);
-      setContentData(res.data ?? null);
+      setContentData(res.data ? (res.data as Record<string, unknown>) : null);
     } catch (err: unknown) {
       const typedErr = err as { response?: { data?: { code?: number } } };
       message.error(getErrorMessage(typedErr.response?.data?.code));

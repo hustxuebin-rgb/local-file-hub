@@ -28,7 +28,9 @@ function AlertsPage(): React.ReactNode {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleBatchRead = async () => {

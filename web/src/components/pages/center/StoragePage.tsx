@@ -15,13 +15,6 @@ function StoragePage(): React.ReactNode {
   const usedPercent = quota > 0 ? Math.min(100, Math.round((usedSize / quota) * 100)) : 0;
   const availableBytes = Math.max(0, quota - usedSize);
 
-  const formatSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-  };
-
   const getProgressStatus = (percent: number): 'success' | 'active' | 'exception' => {
     if (percent >= 95) return 'exception';
     if (percent >= 75) return 'active';

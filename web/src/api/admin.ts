@@ -145,6 +145,6 @@ export function getDiskSimple(): Promise<ApiResponse<DiskSimple[]>> {
 
 /* ========== 服务器状态 ========== */
 
-export function getServerInfo(): Promise<ApiResponse<any>> {
+export function getServerInfo(): Promise<ApiResponse<{ local_ip: string; version: string; service_name: string }>> {
   return client.get('/api/lan/server_info').then((res) => res.data);
 }

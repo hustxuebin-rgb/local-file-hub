@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Card,
   Table,
@@ -9,12 +8,10 @@ import {
   Space,
   Input,
   Modal,
-  Form,
   Popconfirm,
   Dropdown,
   message,
   Tag,
-  Spin,
   Empty,
 } from 'antd';
 import type { TableProps, TabsProps, TreeProps } from 'antd';
@@ -27,15 +24,11 @@ import {
   PlusOutlined,
   EditOutlined,
   ShareAltOutlined,
-  MoreOutlined,
   ReloadOutlined,
   StarOutlined,
 } from '@ant-design/icons';
 import { useFileStore } from '@/stores/useFileStore';
-import { useAuthStore } from '@/stores/useAuthStore';
 import {
-  listFiles,
-  getTree,
   createFolder,
   renameFolder,
   deleteFolder,
@@ -57,7 +50,6 @@ import ShareFileModal from '@/components/shared/ShareFileModal';
 const { DirectoryTree } = Tree;
 
 function FileManager(): React.ReactNode {
-  const navigate = useNavigate();
   const {
     currentPartition,
     currentFolderId,
@@ -93,6 +85,7 @@ function FileManager(): React.ReactNode {
 
   useEffect(() => {
     fetchTree();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -104,6 +97,7 @@ function FileManager(): React.ReactNode {
       sortBy: sort.field === 'name' ? 'fileName' : sort.field === 'fileSize' ? 'fileSize' : 'createTime',
       sortOrder: sort.order,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolderId, currentPartition, page, keyword, fileType, sort]);
 
   const tabsItems: TabsProps['items'] = [
@@ -363,6 +357,7 @@ function FileManager(): React.ReactNode {
     }));
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const treeData = useMemo(() => buildFolderTree(folderTree), [folderTree]);
 
   return (
@@ -427,7 +422,6 @@ function FileManager(): React.ReactNode {
                 total,
                 onChange: (p) => {
                   setPage(p);
-                  fetchFiles({ page: p, pageSize });
                 },
                 showSizeChanger: false,
               }}

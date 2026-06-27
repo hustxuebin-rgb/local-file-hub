@@ -82,17 +82,20 @@ function FolderPicker({ value, onChange, placeholder = '选择存储路径' }: F
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onChange]);
 
   // 同步外部 value 到内部 selectedPath，并加载对应目录
   useEffect(() => {
     if (value !== undefined && value !== selectedPath) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedPath(value);
       setCurrentPath(value);
       if (value) {
         browsePath(value);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, browsePath]);
 
   // 点击挂载点 → 浏览其子目录

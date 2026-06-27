@@ -9,7 +9,7 @@ import {
 } from '@ant-design/icons';
 import type { FileInfo, PublicFile } from '@/types';
 
-type GridFileItem = (FileInfo | PublicFile) & { uploaderName?: string; targetType?: number; targetId?: number; targetName?: string; targetSize?: number };
+export type GridFileItem = (FileInfo | PublicFile) & { uploaderName?: string; targetType?: number; targetId?: number; targetName?: string; targetSize?: number };
 
 const FILE_TYPE_ICON_MAP: Record<number, React.ReactNode> = {
   1: <PictureOutlined style={{ fontSize: 48, color: '#1677ff' }} />,

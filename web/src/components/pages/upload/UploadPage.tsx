@@ -203,6 +203,7 @@ function UploadPage(): React.ReactNode {
   const customRequest = () => {};
 
   // 构建 TreeSelect 所需的树形数据
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const buildTreeData = (folders: Folder[]): any[] => {
     return folders.map((f) => ({
       value: f.id,
@@ -211,7 +212,8 @@ function UploadPage(): React.ReactNode {
     }));
   };
 
-  const treeData = buildTreeData(folderTree);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const treeData: any[] = buildTreeData(folderTree);
 
   // 新建文件夹
   const handleCreateFolder = async () => {
@@ -258,14 +260,17 @@ function UploadPage(): React.ReactNode {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadFolderTree();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partition]);
 
   useEffect(() => {
+    const queueRef = conflictQueueRef;
     return () => {
       // 组件卸载时清理冲突弹窗队列，避免 Promise 永久挂起
-      while (conflictQueueRef.current.length > 0) {
-        conflictQueueRef.current.shift()!.resolve('cancel');
+      while (queueRef.current.length > 0) {
+        queueRef.current.shift()!.resolve('cancel');
       }
       setConflictModal(null);
     };

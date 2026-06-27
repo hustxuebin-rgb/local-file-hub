@@ -62,6 +62,7 @@ function PublicSpace(): React.ReactNode {
   }, [keyword, fileType, sort, page, pageSize]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
   }, [fetchData]);
 

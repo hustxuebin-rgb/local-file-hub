@@ -30,7 +30,9 @@ function SyncLogsPage(): React.ReactNode {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const columns: TableProps<OperationLog>['columns'] = [

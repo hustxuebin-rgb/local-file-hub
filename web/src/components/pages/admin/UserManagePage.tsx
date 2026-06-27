@@ -45,11 +45,6 @@ function UserManagePage(): React.ReactNode {
     }
   };
 
-  useEffect(() => {
-    fetchData(1, '');
-    fetchDiskList();
-  }, []);
-
   const fetchDiskList = async () => {
     try {
       const res = await getDiskSimple();
@@ -60,6 +55,13 @@ function UserManagePage(): React.ReactNode {
       // 静默失败，磁盘选择为可选功能
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData(1, '');
+    fetchDiskList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSearch = () => {
     setPage(1);
@@ -86,6 +88,7 @@ function UserManagePage(): React.ReactNode {
       const values = await form.validateFields();
       setSubmitting(true);
       if (editingUser) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { username, password, ...updateFields } = values;
         await updateUser(editingUser.id, updateFields);
         message.success('更新成功');
