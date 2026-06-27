@@ -1,0 +1,194 @@
+.favorites-page {
+  min-height: 100vh;
+  background: #f5f5f5;
+  display: flex;
+  flex-direction: column;
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80rpx 0;
+  }
+
+  // 工具栏
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16rpx 24rpx;
+    background: #ffffff;
+    border-bottom: 2rpx solid #f0f0f0;
+  }
+
+  &__title {
+    font-size: 28rpx;
+    font-weight: 500;
+    color: #333333;
+  }
+
+  &__view-toggle {
+    display: flex;
+    border: 2rpx solid #e0e0e0;
+    border-radius: 8rpx;
+    overflow: hidden;
+  }
+
+  &__view-btn {
+    width: 56rpx;
+    height: 44rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26rpx;
+    color: #999999;
+    background: #fafafa;
+
+    &.active {
+      background: #1677ff;
+      color: #ffffff;
+    }
+  }
+
+  // 滚动容器
+  &__scroll {
+    flex: 1;
+    height: 0;
+  }
+
+  &__content {
+    padding: 16rpx 24rpx;
+    padding-bottom: 40rpx;
+  }
+
+  // 列表视图
+  &__list-view {
+    background: #ffffff;
+    border-radius: 16rpx;
+    overflow: hidden;
+  }
+
+  &__list-item {
+    border-bottom: 2rpx solid #f5f5f5;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  &__cell {
+    :global {
+      .nut-cell__title {
+        overflow: hidden;
+        min-width: 0;
+      }
+    }
+  }
+
+  &__cell-title {
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+    overflow: hidden;
+  }
+
+  &__cell-emoji {
+    font-size: 40rpx;
+    flex-shrink: 0;
+  }
+
+  &__cell-info {
+    flex: 1;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  &__cell-name {
+    display: block;
+    font-size: 26rpx;
+    color: #333333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__cell-meta {
+    display: block;
+    font-size: 22rpx;
+    color: #999999;
+    margin-top: 2rpx;
+  }
+
+  // 卡片视图
+  &__card-item {
+    background: #ffffff;
+    border-radius: 16rpx;
+    padding: 24rpx;
+    margin-bottom: 16rpx;
+  }
+
+  &__card-top {
+    display: flex;
+    align-items: center;
+    gap: 20rpx;
+  }
+
+  &__card-emoji {
+    font-size: 56rpx;
+    flex-shrink: 0;
+  }
+
+  &__card-info {
+    flex: 1;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  &__card-name {
+    display: block;
+    font-size: 28rpx;
+    color: #333333;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 4rpx;
+  }
+
+  &__card-meta {
+    display: block;
+    font-size: 22rpx;
+    color: #999999;
+    line-height: 1.6;
+  }
+
+  &__card-bottom {
+    margin-top: 16rpx;
+    padding-top: 16rpx;
+    border-top: 2rpx solid #f5f5f5;
+    text-align: right;
+  }
+
+  // 取消收藏按钮
+  &__remove-btn {
+    font-size: 24rpx;
+    color: #ff4d4f;
+    padding: 4rpx 12rpx;
+    flex-shrink: 0;
+  }
+
+  // 加载更多
+  &__loading-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24rpx 0;
+  }
+
+  &__no-more {
+    text-align: center;
+    padding: 24rpx 0;
+    font-size: 24rpx;
+    color: #cccccc;
+  }
+}

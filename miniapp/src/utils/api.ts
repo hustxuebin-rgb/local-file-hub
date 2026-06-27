@@ -89,10 +89,21 @@ export interface FileListResp {
   total: number;
 }
 
-export function listFiles(params?: { folderId?: number; page?: number; pageSize?: number }): Promise<FileListResp> {
+export interface FileListParams {
+  folderId?: number;
+  partition?: number;
+  keyword?: string;
+  fileType?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export function listFiles(params?: FileListParams): Promise<FileListResp> {
   return api.get<FileListResp>('/api/file/list', {
     skipErrorToast: true,
-    params: params || undefined,
+    params: params as Record<string, unknown> | undefined,
   });
 }
 
@@ -165,6 +176,86 @@ export interface StorageStat {
 
 export function getStorageStat(): Promise<StorageStat> {
   return api.get<StorageStat>('/api/miniapp/storage_stat');
+}
+
+// ====== 公共文件 ======
+
+export interface PublicFile extends FileInfo {
+  uploaderName?: string;
+}
+
+export interface PublicFileListParams {
+  keyword?: string;
+  fileType?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export function listPublicFiles(params?: PublicFileListParams): Promise<{ total: number; list: PublicFile[] }> {
+  return api.get<{ total: number; list: PublicFile[] }>('/api/file/public', {
+    skipErrorToast: true,
+    params: params as Record<string, unknown> | undefined,
+  });
+}
+
+// ====== 收藏相关 ======
+
+export interface FavoriteItem {
+  id: number;
+  targetType: number;   // 1=文件, 2=文件夹, 3=分享
+  targetId: number;
+  targetName: string;
+  targetSize: number;
+  ownerName: string;
+  createTime: string;
+}
+
+export function addFavorite(data: { targetType: number; targetId: number }): Promise<void> {
+  return api.post<void>('/api/favorite', data);
+}
+
+export function removeFavorite(data: { targetType: number; targetId: number }): Promise<void> {
+  return api.delete<void>(`/api/favorite?targetType=${data.targetType}&targetId=${data.targetId}`);
+}
+
+export function listFavorites(params?: { page?: number; pageSize?: number }): Promise<{ total: number; list: FavoriteItem[] }> {
+  return api.get<{ total: number; list: FavoriteItem[] }>('/api/favorite/list', {
+    skipErrorToast: true,
+    params: params || undefined,
+  });
+}
+
+// ====== 批量分享 ======
+
+export interface BatchShareItem {
+  resourceId: number;
+  shareType: number;
+  receiveUserId: number;
+  sharePerm: number;
+  expireType: number;
+}
+
+export function batchCreateShare(data: { items: BatchShareItem[] }): Promise<void> {
+  return api.post<void>('/api/share/batch', data);
+}
+
+// ====== 操作记录 ======
+
+export interface OperationLogItem {
+  id: number;
+  operType: number;
+  operDesc: string;
+  localIp: string;
+  createTime: string;
+}
+
+export function getMyLogs(params?: { operType?: number; page?: number; pageSize?: number }): Promise<{ total: number; list: OperationLogItem[] }> {
+  return api.get<{ total: number; list: OperationLogItem[] }>('/api/log/my', {
+    skipErrorToast: true,
+    params: params || undefined,
+  });
 }
 
 // ====== 用户搜索 ======

@@ -1,0 +1,145 @@
+.operation-logs-page {
+  min-height: 100vh;
+  background: #f5f5f5;
+  display: flex;
+  flex-direction: column;
+
+  // Tabs
+  &__tabs {
+    display: flex;
+    background: #ffffff;
+    border-bottom: 2rpx solid #f0f0f0;
+  }
+
+  &__tab {
+    flex: 1;
+    text-align: center;
+    padding: 24rpx 0;
+    font-size: 28rpx;
+    color: #666666;
+    position: relative;
+    transition: color 0.2s;
+
+    &.active {
+      color: #1677ff;
+      font-weight: 500;
+
+      &::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 48rpx;
+        height: 4rpx;
+        background: #1677ff;
+        border-radius: 2rpx;
+      }
+    }
+  }
+
+  // 滚动容器
+  &__scroll {
+    flex: 1;
+    height: 0;
+  }
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80rpx 0;
+  }
+
+  &__content {
+    padding: 16rpx 24rpx;
+    padding-bottom: 40rpx;
+  }
+
+  // 日志列表
+  &__list {
+    background: #ffffff;
+    border-radius: 16rpx;
+    overflow: hidden;
+  }
+
+  &__cell {
+    border-bottom: 2rpx solid #f5f5f5;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    :global {
+      .nut-cell__title {
+        overflow: hidden;
+        min-width: 0;
+      }
+    }
+  }
+
+  &__cell-title {
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+    overflow: hidden;
+  }
+
+  &__cell-emoji {
+    font-size: 36rpx;
+    flex-shrink: 0;
+  }
+
+  &__cell-text {
+    flex: 1;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  &__cell-desc {
+    display: block;
+    font-size: 26rpx;
+    color: #333333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 2rpx;
+  }
+
+  &__cell-type {
+    display: block;
+    font-size: 22rpx;
+    color: #999999;
+  }
+
+  &__cell-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__cell-ip {
+    font-size: 22rpx;
+    color: #999999;
+  }
+
+  &__cell-time {
+    font-size: 22rpx;
+    color: #999999;
+  }
+
+  // 加载更多
+  &__loading-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24rpx 0;
+  }
+
+  &__no-more {
+    text-align: center;
+    padding: 24rpx 0;
+    font-size: 24rpx;
+    color: #cccccc;
+  }
+}

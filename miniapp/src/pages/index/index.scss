@@ -1,6 +1,8 @@
 .index-page {
   min-height: 100vh;
   background: #f5f5f5;
+  display: flex;
+  flex-direction: column;
 
   &__status-bar {
     display: flex;
@@ -31,6 +33,129 @@
     text-overflow: ellipsis;
   }
 
+  // 搜索栏
+  &__search-bar {
+    padding: 16rpx 24rpx;
+    background: #ffffff;
+  }
+
+  &__search-input-wrap {
+    display: flex;
+    align-items: center;
+    background: #f5f5f5;
+    border-radius: 32rpx;
+    padding: 0 20rpx;
+    height: 64rpx;
+  }
+
+  &__search-icon {
+    font-size: 28rpx;
+    margin-right: 12rpx;
+    flex-shrink: 0;
+  }
+
+  &__search-input {
+    flex: 1;
+    height: 64rpx;
+    font-size: 26rpx;
+    background: transparent;
+  }
+
+  &__search-clear {
+    font-size: 28rpx;
+    color: #999999;
+    padding: 8rpx;
+    flex-shrink: 0;
+  }
+
+  // 快速导航
+  &__quick-nav {
+    display: flex;
+    padding: 12rpx 24rpx;
+    background: #ffffff;
+    border-bottom: 2rpx solid #f0f0f0;
+    gap: 8rpx;
+  }
+
+  &__quick-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12rpx 0;
+    border-radius: 12rpx;
+    background: #f5f7fa;
+    transition: background 0.2s;
+
+    &:active {
+      background: #e6f0ff;
+    }
+  }
+
+  &__quick-nav-icon {
+    font-size: 32rpx;
+    margin-bottom: 4rpx;
+  }
+
+  &__quick-nav-label {
+    font-size: 20rpx;
+    color: #666666;
+  }
+
+  // 工具栏
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12rpx 24rpx;
+    background: #ffffff;
+    border-bottom: 2rpx solid #f0f0f0;
+  }
+
+  &__toolbar-btn {
+    font-size: 22rpx !important;
+    height: 48rpx !important;
+    padding: 0 16rpx !important;
+    line-height: 48rpx !important;
+    border-radius: 24rpx !important;
+
+    &--cancel {
+      background: #ff4d4f !important;
+      color: #ffffff !important;
+      border-color: #ff4d4f !important;
+    }
+  }
+
+  &__toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+  }
+
+  &__view-toggle {
+    display: flex;
+    border: 2rpx solid #e0e0e0;
+    border-radius: 8rpx;
+    overflow: hidden;
+  }
+
+  &__view-btn {
+    width: 56rpx;
+    height: 44rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26rpx;
+    color: #999999;
+    background: #fafafa;
+
+    &.active {
+      background: #1677ff;
+      color: #ffffff;
+    }
+  }
+
+  // 面包屑导航
   &__nav {
     display: flex;
     align-items: center;
@@ -38,9 +163,6 @@
     padding: 16rpx 24rpx;
     background: #ffffff;
     border-bottom: 2rpx solid #f0f0f0;
-    position: sticky;
-    top: 0;
-    z-index: 10;
   }
 
   &__breadcrumb {
@@ -65,6 +187,12 @@
     margin-left: 16rpx;
   }
 
+  // 滚动容器
+  &__scroll {
+    flex: 1;
+    height: 0; // flex child scroll
+  }
+
   &__loading {
     display: flex;
     align-items: center;
@@ -74,6 +202,7 @@
 
   &__content {
     padding: 16rpx 24rpx;
+    padding-bottom: 120rpx;
   }
 
   &__section {
@@ -88,6 +217,17 @@
     padding-left: 8rpx;
   }
 
+  // 全选栏
+  &__select-all-bar {
+    display: flex;
+    align-items: center;
+    padding: 16rpx 8rpx;
+    background: #ffffff;
+    border-radius: 12rpx;
+    margin-bottom: 12rpx;
+  }
+
+  // 文件夹列表
   &__folder-list {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -118,6 +258,7 @@
     max-width: 100%;
   }
 
+  // 图标视图文件项
   &__file-item {
     display: flex;
     align-items: center;
@@ -125,6 +266,16 @@
     background: #ffffff;
     border-radius: 16rpx;
     margin-bottom: 12rpx;
+    position: relative;
+
+    &.multi-select {
+      padding-left: 16rpx;
+    }
+
+    &.selected {
+      background: #e6f4ff;
+      border: 2rpx solid #1677ff;
+    }
   }
 
   &__file-icon {
@@ -137,6 +288,7 @@
     align-items: center;
     justify-content: center;
     background: #f5f5f5;
+    flex-shrink: 0;
   }
 
   &__file-thumb {
@@ -151,6 +303,7 @@
   &__file-info {
     flex: 1;
     overflow: hidden;
+    min-width: 0;
   }
 
   &__file-name {
@@ -169,6 +322,118 @@
     color: #999999;
   }
 
+  // 收藏按钮
+  &__favorite-btn {
+    font-size: 36rpx;
+    padding: 8rpx;
+    flex-shrink: 0;
+    margin-left: 8rpx;
+
+    &.favorited {
+      color: #faad14;
+    }
+  }
+
+  // 列表视图
+  &__file-list-view {
+    background: #ffffff;
+    border-radius: 16rpx;
+    overflow: hidden;
+  }
+
+  &__file-list-item {
+    display: flex;
+    align-items: center;
+    border-bottom: 2rpx solid #f5f5f5;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &.selected {
+      background: #e6f4ff;
+    }
+  }
+
+  &__file-checkbox {
+    flex-shrink: 0;
+    margin-left: 8rpx;
+  }
+
+  &__file-cell {
+    flex: 1;
+
+    :global {
+      .nut-cell__title {
+        overflow: hidden;
+        min-width: 0;
+      }
+    }
+  }
+
+  &__file-cell-title {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    gap: 12rpx;
+  }
+
+  &__file-cell-name {
+    font-size: 26rpx;
+    color: #333333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // 加载更多
+  &__loading-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24rpx 0;
+  }
+
+  &__no-more {
+    text-align: center;
+    padding: 24rpx 0;
+    font-size: 24rpx;
+    color: #cccccc;
+  }
+
+  // 底部操作栏
+  &__bottom-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 16rpx 24rpx;
+    padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+    background: #ffffff;
+    box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.06);
+    display: flex;
+    justify-content: center;
+    z-index: 100;
+  }
+
+  &__bottom-btn {
+    width: 80%;
+    border-radius: 40rpx !important;
+    height: 80rpx !important;
+    font-size: 28rpx !important;
+
+    &--share {
+      background: #1677ff !important;
+      color: #ffffff !important;
+      border-color: #1677ff !important;
+    }
+
+    &[disabled] {
+      opacity: 0.5;
+    }
+  }
+
+  // 对话框
   &__dialog-input {
     padding: 16rpx 0;
   }

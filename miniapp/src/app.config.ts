@@ -9,6 +9,8 @@ export default {
     'pages/camera-upload/index',
     'pages/storage-stats/index',
     'pages/create-share/index',
+    'pages/favorites/index',
+    'pages/operation-logs/index',
   ],
   window: {
     navigationBarTitleText: '文件管理',

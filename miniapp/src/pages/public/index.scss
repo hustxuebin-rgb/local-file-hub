@@ -1,6 +1,214 @@
 .public-page {
   min-height: 100vh;
   background: #f5f5f5;
+  display: flex;
+  flex-direction: column;
+
+  // 搜索栏
+  &__search-bar {
+    padding: 16rpx 24rpx;
+    background: #ffffff;
+  }
+
+  &__search-input-wrap {
+    display: flex;
+    align-items: center;
+    background: #f5f5f5;
+    border-radius: 32rpx;
+    padding: 0 20rpx;
+    height: 64rpx;
+  }
+
+  &__search-icon {
+    font-size: 28rpx;
+    margin-right: 12rpx;
+    flex-shrink: 0;
+  }
+
+  &__search-input {
+    flex: 1;
+    height: 64rpx;
+    font-size: 26rpx;
+    background: transparent;
+  }
+
+  &__search-clear {
+    font-size: 28rpx;
+    color: #999999;
+    padding: 8rpx;
+    flex-shrink: 0;
+  }
+
+  // 工具栏
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12rpx 24rpx;
+    background: #ffffff;
+    border-bottom: 2rpx solid #f0f0f0;
+  }
+
+  &__sort-btn {
+    font-size: 24rpx;
+    color: #1677ff;
+    padding: 8rpx 20rpx;
+    background: #f0f5ff;
+    border-radius: 24rpx;
+  }
+
+  &__view-toggle {
+    display: flex;
+    border: 2rpx solid #e0e0e0;
+    border-radius: 8rpx;
+    overflow: hidden;
+  }
+
+  &__view-btn {
+    width: 56rpx;
+    height: 44rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26rpx;
+    color: #999999;
+    background: #fafafa;
+
+    &.active {
+      background: #1677ff;
+      color: #ffffff;
+    }
+  }
+
+  // 滚动容器
+  &__scroll {
+    flex: 1;
+    height: 0;
+  }
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80rpx 0;
+  }
+
+  &__content {
+    padding: 16rpx 24rpx;
+    padding-bottom: 40rpx;
+  }
+
+  // 图标视图
+  &__file-item {
+    display: flex;
+    align-items: center;
+    padding: 20rpx;
+    background: #ffffff;
+    border-radius: 16rpx;
+    margin-bottom: 12rpx;
+  }
+
+  &__file-icon {
+    font-size: 40rpx;
+    margin-right: 20rpx;
+  }
+
+  &__file-info {
+    flex: 1;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  &__file-name {
+    display: block;
+    font-size: 28rpx;
+    color: #333333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 4rpx;
+  }
+
+  &__file-meta {
+    display: block;
+    font-size: 22rpx;
+    color: #999999;
+  }
+
+  // 收藏按钮
+  &__favorite-btn {
+    font-size: 36rpx;
+    padding: 8rpx;
+    flex-shrink: 0;
+    margin-left: 8rpx;
+
+    &.favorited {
+      color: #faad14;
+    }
+  }
+
+  // 列表视图
+  &__file-list-view {
+    background: #ffffff;
+    border-radius: 16rpx;
+    overflow: hidden;
+  }
+
+  &__file-list-item {
+    border-bottom: 2rpx solid #f5f5f5;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  &__file-cell {
+    :global {
+      .nut-cell__title {
+        overflow: hidden;
+        min-width: 0;
+      }
+    }
+  }
+
+  &__file-cell-title {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    gap: 12rpx;
+  }
+
+  &__file-emoji-small {
+    font-size: 32rpx;
+    flex-shrink: 0;
+  }
+
+  &__file-cell-name {
+    font-size: 26rpx;
+    color: #333333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // 加载更多
+  &__loading-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24rpx 0;
+  }
+
+  &__no-more {
+    text-align: center;
+    padding: 24rpx 0;
+    font-size: 24rpx;
+    color: #cccccc;
+  }
+}
+.public-page {
+  min-height: 100vh;
+  background: #f5f5f5;
 
   &__loading {
     display: flex;
