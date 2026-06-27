@@ -145,7 +145,7 @@ function LoginPage(_props: LoginProps): JSX.Element {
             placeholder="请输入用户名"
             value={username}
             onChange={(v) => setUsername(v)}
-            maxlength={50}
+            maxLength={50}
           />
         </Cell>
         <Cell>
@@ -155,8 +155,7 @@ function LoginPage(_props: LoginProps): JSX.Element {
             placeholder="请输入密码"
             value={password}
             onChange={(v) => setPassword(v)}
-            maxlength={50}
-            password
+            maxLength={50}
           />
         </Cell>
         <Button

@@ -320,7 +320,7 @@ function UploadPage(): React.ReactNode {
       title="上传文件"
       extra={
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={loadFolderTree}>
+          <Button icon={<ReloadOutlined />} onClick={() => loadFolderTree()}>
             刷新文件夹
           </Button>
         </Space>

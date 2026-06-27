@@ -43,12 +43,13 @@ export const useFileStore = create<FileState>((set, get) => ({
 
   setPartition: (partition: number) => {
     set({ currentPartition: partition, currentFolderId: null });
-    get().fetchFiles();
+    // fetchFiles 由组件 useEffect 在 currentPartition 变化时自动触发，
+    // 避免在此处直接调用导致与 useEffect 中的带参请求产生竞态条件
   },
 
   setFolderId: (id: number | null) => {
     set({ currentFolderId: id });
-    get().fetchFiles();
+    // fetchFiles 由组件 useEffect 在 currentFolderId 变化时自动触发
   },
 
   fetchFiles: async (params?: {

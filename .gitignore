@@ -19,3 +19,9 @@ backend/server
 Thumbs.db
 .qoder
 .vscode
+
+# Test data & build artifacts
+backend/data/
+miniapp/.swc/
+web/screenshots/
+docs/agent同步记录/

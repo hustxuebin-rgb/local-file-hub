@@ -397,6 +397,9 @@ function FileManager(): React.ReactNode {
         )}
       </div>
 
+      {/* 分类标签 - 横跨全宽，位于文件列表上方 */}
+      <FileCategoryTabs activeKey={categoryKey} onChange={handleCategoryChange} />
+
       <div style={{ display: 'flex', gap: 16 }}>
         <div style={{ width: 240, minWidth: 240 }}>
           <Card title="文件夹" size="small">
@@ -412,7 +415,6 @@ function FileManager(): React.ReactNode {
           </Card>
         </div>
         <div style={{ flex: 1 }}>
-          <FileCategoryTabs activeKey={categoryKey} onChange={handleCategoryChange} />
           {viewMode === 'list' ? (
             <Table<FileInfo>
               rowKey="id"

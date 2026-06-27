@@ -9,7 +9,7 @@ import {
 } from '@ant-design/icons';
 import type { FileInfo, PublicFile } from '@/types';
 
-type GridFileItem = (FileInfo | PublicFile) & { uploaderName?: string; targetType?: number };
+type GridFileItem = (FileInfo | PublicFile) & { uploaderName?: string; targetType?: number; targetId?: number; targetName?: string; targetSize?: number };
 
 const FILE_TYPE_ICON_MAP: Record<number, React.ReactNode> = {
   1: <PictureOutlined style={{ fontSize: 48, color: '#1677ff' }} />,
@@ -61,10 +61,10 @@ function FileGridView({
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
       {files.map((file) => {
-        const fileName = 'targetName' in file && file.targetName ? file.targetName : (file as FileInfo).fileName;
-        const fileSize = 'targetSize' in file ? file.targetSize : (file as FileInfo).fileSize;
-        const fileSuffix = 'fileSuffix' in file ? (file as FileInfo).fileSuffix : undefined;
-        const fileType = 'fileType' in file ? (file as FileInfo).fileType : 4;
+        const fileName: string = 'targetName' in file && file.targetName ? file.targetName : (file as FileInfo).fileName;
+        const fileSize: number = 'targetSize' in file ? (file.targetSize as number) : (file as FileInfo).fileSize;
+        const fileSuffix: string | undefined = 'fileSuffix' in file ? (file as FileInfo).fileSuffix : undefined;
+        const fileType: number = 'fileType' in file ? (file as FileInfo).fileType : 4;
         const thumbnailUrl = (file as FileInfo).id
           ? `/api/media/thumbnail/${(file as FileInfo).id}`
           : undefined;

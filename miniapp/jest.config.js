@@ -1,7 +1,8 @@
 module.exports = {
   testEnvironment: 'node',
+  setupFiles: ['<rootDir>/__mocks__/setup.js'],
   transform: {
-    '^.+\\.(ts|tsx)$': 'ts-jest',
+    '^.+\\.(ts|tsx)$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
     '^.+\\.(js|jsx)$': 'babel-jest',
   },
   transformIgnorePatterns: [
@@ -11,9 +12,4 @@ module.exports = {
     '\\.(css|scss|less)$': '<rootDir>/__mocks__/styleMock.js',
   },
   testMatch: ['**/__tests__/**/*.test.(ts|tsx)'],
-  globals: {
-    'ts-jest': {
-      tsconfig: 'tsconfig.json',
-    },
-  },
 };

@@ -67,7 +67,7 @@ async function request<T>(
     if (err instanceof Error && err.message === '登录已过期，请重新登录') {
       throw err;
     }
-    if (err instanceof Taro.NetworkError || (err as { errMsg?: string })?.errMsg?.includes('timeout')) {
+    if ((err as { errMsg?: string })?.errMsg?.includes('fail') || (err as { errMsg?: string })?.errMsg?.includes('timeout')) {
       if (!config?.skipErrorToast) {
         Taro.showToast({ title: '无法连接服务器', icon: 'none', duration: 4000 });
       }
