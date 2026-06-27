@@ -29,8 +29,8 @@ interface FileState {
     sortBy?: string;
     sortOrder?: string;
   }) => Promise<void>;
-  /** 获取文件夹树 */
-  fetchTree: () => Promise<void>;
+  /** 获取文件夹树，isPublic 按可见性过滤 */
+  fetchTree: (isPublic?: number) => Promise<void>;
 }
 
 export const useFileStore = create<FileState>((set, get) => ({
@@ -81,10 +81,9 @@ export const useFileStore = create<FileState>((set, get) => ({
     }
   },
 
-  fetchTree: async () => {
+  fetchTree: async (isPublic?: number) => {
     try {
-      // 文件夹树不按 partition 过滤，始终展示全部文件夹
-      const res = await getTree();
+      const res = await getTree({ isPublic });
       if (res.data) {
         set({ folderTree: res.data });
       }

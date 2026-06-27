@@ -1,5 +1,5 @@
 import { render, screen, cleanup } from '@testing-library/react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import FavoritesPage from '../FavoritesPage';
 
@@ -33,6 +33,11 @@ vi.mock('@/utils/errorCodes', () => ({
 }));
 
 describe('FavoritesPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetchFavorites.mockClear();
+  });
+
   afterEach(() => {
     cleanup();
   });
@@ -46,7 +51,29 @@ describe('FavoritesPage', () => {
     expect(await screen.findByText('我的收藏', {}, { timeout: 8000 })).toBeInTheDocument();
   });
 
-  it('空收藏列表渲染 FileViewToggle', async () => {
+  it('渲染搜索栏', async () => {
+    render(
+      <MemoryRouter>
+        <FavoritesPage />
+      </MemoryRouter>,
+    );
+    // FileSearchBar renders an Input.Search with placeholder "搜索收藏"
+    expect(await screen.findByPlaceholderText('搜索收藏', {}, { timeout: 8000 })).toBeInTheDocument();
+  });
+
+  it('渲染分类标签（全部/文件/文件夹/分享）', async () => {
+    render(
+      <MemoryRouter>
+        <FavoritesPage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('全部', {}, { timeout: 8000 })).toBeInTheDocument();
+    expect(screen.getByText('文件')).toBeInTheDocument();
+    expect(screen.getByText('文件夹')).toBeInTheDocument();
+    expect(screen.getByText('分享')).toBeInTheDocument();
+  });
+
+  it('渲染 FileViewToggle（列表/图标）', async () => {
     render(
       <MemoryRouter>
         <FavoritesPage />
@@ -56,12 +83,12 @@ describe('FavoritesPage', () => {
     expect(screen.getByText('图标')).toBeInTheDocument();
   });
 
-  it('mount 时调用 fetchFavorites', () => {
+  it('mount 时调用 fetchFavorites 并传递默认参数', () => {
     render(
       <MemoryRouter>
         <FavoritesPage />
       </MemoryRouter>,
     );
-    expect(mockFetchFavorites).toHaveBeenCalledWith(1, 20);
+    expect(mockFetchFavorites).toHaveBeenCalledWith(1, 20, undefined, undefined);
   });
 });

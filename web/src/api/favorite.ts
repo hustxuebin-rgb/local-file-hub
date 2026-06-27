@@ -11,6 +11,10 @@ interface FavoriteListData {
 export function listFavorites(params: {
   page?: number;
   pageSize?: number;
+  keyword?: string;
+  targetType?: number; // 1=文件, 2=文件夹, 3=分享
+  sortBy?: string;     // targetName, createTime, targetSize
+  sortOrder?: string;  // asc, desc
 }): Promise<ApiResponse<FavoriteListData>> {
   return client.get('/api/favorite/list', { params }).then((res) => res.data);
 }

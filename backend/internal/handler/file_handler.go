@@ -32,10 +32,11 @@ type FileHandler struct {
 
 // UploadInitReq 初始化上传请求
 type UploadInitReq struct {
-	FileName string `json:"fileName" binding:"required"`
-	FileSize int64  `json:"fileSize" binding:"required"`
-	FileMD5  string `json:"md5"`
-	FolderID int64  `json:"folderId"`
+	FileName   string `json:"fileName" binding:"required"`
+	FileSize   int64  `json:"fileSize" binding:"required"`
+	FileMD5    string `json:"md5"`
+	FolderID   int64  `json:"folderId"`
+	Visibility int8   `json:"visibility"`
 }
 
 // UploadMergeReq 合并上传请求
@@ -79,6 +80,7 @@ type FileInfoResp struct {
 	MimeType     string `json:"mimeType"`
 	MD5          string `json:"md5"`
 	FullPath     string `json:"fullPath"`
+	Visibility   int8   `json:"visibility"`
 	IsDelete     int8   `json:"isDelete"`
 	CreateTime   string `json:"createTime"`
 	UploaderName string `json:"uploaderName,omitempty"`
@@ -107,6 +109,7 @@ func toFileInfoResp(f *model.FileInfo) FileInfoResp {
 		MimeType:   mimeType,
 		MD5:        f.MD5,
 		FullPath:   f.FullPath,
+		Visibility: f.Visibility,
 		IsDelete:   f.IsDelete,
 		CreateTime: f.CreateTime.Format("2006-01-02 15:04:05"),
 	}
@@ -125,7 +128,7 @@ func (h *FileHandler) UploadInit(c *gin.Context) {
 
 	userID := c.GetInt64("user_id")
 
-	resp, err := h.UploadService.InitUpload(userID, req.FileName, req.FileSize, req.FileMD5, req.FolderID)
+	resp, err := h.UploadService.InitUpload(userID, req.FileName, req.FileSize, req.FileMD5, req.FolderID, req.Visibility)
 	if err != nil {
 		log.Printf("upload init error: %v", err)
 		response.Error(c, response.CodeInternal, "初始化上传失败")
@@ -133,9 +136,9 @@ func (h *FileHandler) UploadInit(c *gin.Context) {
 	}
 
 	if resp.QuickDone {
-		h.logOperation(c, userID, 6, 1, &resp.FileID, "秒传文件: "+req.FileName)
+		h.logOperation(c, userID, OperTypeUpload, 1, &resp.FileID, "秒传文件: "+req.FileName)
 	} else {
-		h.logOperation(c, userID, 6, 1, nil, "开始上传: "+req.FileName)
+		h.logOperation(c, userID, OperTypeUpload, 1, nil, "开始上传: "+req.FileName)
 	}
 
 	response.Success(c, resp)
@@ -209,7 +212,7 @@ func (h *FileHandler) UploadMerge(c *gin.Context) {
 		return
 	}
 
-	h.logOperation(c, userID, 6, 1, &fileInfo.ID, "上传完成: "+fileInfo.FileName)
+	h.logOperation(c, userID, OperTypeUpload, 1, &fileInfo.ID, "上传完成: "+fileInfo.FileName)
 	response.Success(c, toFileInfoResp(fileInfo))
 }
 
@@ -228,7 +231,7 @@ func (h *FileHandler) UploadCancel(c *gin.Context) {
 		return
 	}
 
-	h.logOperation(c, userID, 6, 1, nil, "取消上传: taskID="+req.TaskID)
+	h.logOperation(c, userID, OperTypeUpload, 1, nil, "取消上传: taskID="+req.TaskID)
 	response.SuccessWithMsg(c, "已取消上传", nil)
 }
 
@@ -307,6 +310,16 @@ func (h *FileHandler) PublicList(c *gin.Context) {
 		pageSize = 20
 	}
 
+	// 解析可选的 folderId 参数，0 表示不限制
+	var folderID int64
+	if fid := c.Query("folderId"); fid != "" {
+		var parseErr error
+		folderID, parseErr = strconv.ParseInt(fid, 10, 64)
+		if parseErr != nil {
+			folderID = 0
+		}
+	}
+
 	keyword := c.Query("keyword")
 	var fileType *int8
 	if ft := c.Query("fileType"); ft != "" {
@@ -319,18 +332,30 @@ func (h *FileHandler) PublicList(c *gin.Context) {
 	sortBy := c.DefaultQuery("sortBy", "createTime")
 	sortOrder := c.DefaultQuery("sortOrder", "desc")
 
-	files, total, err := h.StorageService.ListPublicFiles(keyword, fileType, sortBy, sortOrder, page, pageSize)
+	files, total, err := h.StorageService.ListPublicFiles(folderID, keyword, fileType, sortBy, sortOrder, page, pageSize)
 	if err != nil {
 		response.Error(c, response.CodeInternal, "获取公开文件列表失败")
 		return
 	}
 
 	list := make([]FileInfoResp, 0, len(files))
+
+	// 收集唯一用户ID，批量获取昵称
+	userIDs := make(map[int64]bool)
+	for i := range files {
+		userIDs[files[i].UserID] = true
+	}
+	ids := make([]int64, 0, len(userIDs))
+	for uid := range userIDs {
+		ids = append(ids, uid)
+	}
+	userMap, _ := h.UserRepo.FindByIDs(ids)
+
 	for i := range files {
 		resp := toFileInfoResp(&files[i])
 		// 填充上传者昵称
-		if uploader, uerr := h.UserRepo.FindByID(files[i].UserID); uerr == nil {
-			resp.UploaderName = uploader.Nickname
+		if u, ok := userMap[files[i].UserID]; ok {
+			resp.UploaderName = u.Nickname
 		}
 		list = append(list, resp)
 	}
@@ -396,7 +421,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 		return
 	}
 
-	h.logOperation(c, userID, 3, 1, &fileInfo.ID, "下载文件: "+fileInfo.FileName)
+	h.logOperation(c, userID, OperTypeDownload, 1, &fileInfo.ID, "下载文件: "+fileInfo.FileName)
 
 	c.FileAttachment(fileInfo.FullPath, fileInfo.FileName)
 }
@@ -485,7 +510,7 @@ func (h *FileHandler) Delete(c *gin.Context) {
 	// 更新用户已用空间（减少）
 	h.UserRepo.UpdateUsedSize(userID, -fileInfo.FileSize)
 
-	h.logOperation(c, userID, 4, 1, &fileInfo.ID, "删除文件: "+fileInfo.FileName)
+	h.logOperation(c, userID, OperTypeDelete, 1, &fileInfo.ID, "删除文件: "+fileInfo.FileName)
 	response.SuccessWithMsg(c, "文件已移入回收站", nil)
 }
 
@@ -526,7 +551,7 @@ func (h *FileHandler) Move(c *gin.Context) {
 		return
 	}
 
-	h.logOperation(c, userID, 5, 1, &fileInfo.ID, fmt.Sprintf("移动文件: %s → folderID=%d", fileInfo.FileName, req.TargetFolderID))
+	h.logOperation(c, userID, OperTypeMove, 1, &fileInfo.ID, fmt.Sprintf("移动文件: %s → folderID=%d", fileInfo.FileName, req.TargetFolderID))
 	response.Success(c, toFileInfoResp(fileInfo))
 }
 
@@ -598,7 +623,7 @@ func (h *FileHandler) RecycleRecover(c *gin.Context) {
 	// 更新用户已用空间（恢复）
 	h.UserRepo.UpdateUsedSize(userID, fileInfo.FileSize)
 
-	h.logOperation(c, userID, 7, 1, &fileInfo.ID, "恢复文件: "+fileInfo.FileName)
+	h.logOperation(c, userID, OperTypeRecover, 1, &fileInfo.ID, "恢复文件: "+fileInfo.FileName)
 	response.SuccessWithMsg(c, "文件已恢复", nil)
 }
 
@@ -638,8 +663,64 @@ func (h *FileHandler) RecycleDelete(c *gin.Context) {
 		return
 	}
 
-	h.logOperation(c, userID, 8, 1, &fileInfo.ID, "彻底删除文件: "+fileInfo.FileName)
+	h.logOperation(c, userID, OperTypeHardDelete, 1, &fileInfo.ID, "彻底删除文件: "+fileInfo.FileName)
 	response.SuccessWithMsg(c, "文件已彻底删除", nil)
+}
+
+// UpdateVisibilityReq 更新文件可见性请求
+type UpdateVisibilityReq struct {
+	Visibility int8 `json:"visibility" binding:"oneof=0 1"`
+}
+
+// UpdateVisibility 切换文件可见性（公共/私有）
+func (h *FileHandler) UpdateVisibility(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+
+	fileID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, response.CodeBadRequest, "参数格式错误")
+		return
+	}
+
+	var req UpdateVisibilityReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: visibility 必须为 0 或 1")
+		return
+	}
+
+	// 验证文件所有权
+	fileInfo, err := h.FileRepo.FindByID(fileID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, response.CodeNotFound, "文件不存在")
+			return
+		}
+		response.Error(c, response.CodeInternal, "查询文件失败")
+		return
+	}
+
+	if fileInfo.UserID != userID {
+		response.Error(c, response.CodeForbidden, "无权操作该文件")
+		return
+	}
+
+	if fileInfo.IsDelete == 1 {
+		response.Error(c, response.CodeBadRequest, "已删除的文件无法修改可见性")
+		return
+	}
+
+	if err := h.FileRepo.UpdateVisibility(fileID, req.Visibility); err != nil {
+		response.Error(c, response.CodeInternal, "更新可见性失败")
+		return
+	}
+
+	visibilityLabel := "设为私有"
+	if req.Visibility == 1 {
+		visibilityLabel = "设为公共"
+	}
+	h.logOperation(c, userID, OperTypeVisibility, 1, &fileInfo.ID, visibilityLabel+": "+fileInfo.FileName)
+
+	response.SuccessWithMsg(c, "可见性更新成功", nil)
 }
 
 // ==================== 辅助函数 ====================

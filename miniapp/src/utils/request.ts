@@ -80,7 +80,7 @@ export const api = {
   get: <T>(url: string, config?: RequestConfig) => request<T>('GET', url, undefined, config),
   post: <T>(url: string, data?: unknown, config?: RequestConfig) => request<T>('POST', url, data, config),
   put: <T>(url: string, data?: unknown, config?: RequestConfig) => request<T>('PUT', url, data, config),
-  delete: <T>(url: string, config?: RequestConfig) => request<T>('DELETE', url, undefined, config),
+  delete: <T>(url: string, data?: unknown, config?: RequestConfig) => request<T>('DELETE', url, data, config),
 };
 
 export default api;

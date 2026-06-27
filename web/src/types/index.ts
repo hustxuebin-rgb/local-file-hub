@@ -57,6 +57,7 @@ export interface FileInfo {
   fullPath: string;
   thumbnailPath?: string;
   sourceDevice?: number;
+  visibility?: number;
   isDelete: number;
   deleteTime?: string;
   createTime: string;
@@ -122,6 +123,7 @@ export interface WarnLog {
 export interface OperationLog {
   id: number;
   userId?: number;
+  userName?: string;
   operType: string;
   resourceType?: number;
   resourceId?: number;
@@ -148,11 +150,11 @@ export interface DiskSimple {
 }
 
 export const FILE_TYPE_MAP: Record<number, string> = {
-  0: '其他',
   1: '图片',
   2: '视频',
   3: '音频',
   4: '文档',
+  5: '其他',
 };
 
 export const PERMISSION_MAP: Record<number, string> = {
@@ -181,6 +183,17 @@ export interface Favorite {
 
 export interface PublicFile extends FileInfo {
   uploaderName?: string;
+}
+
+// ========== 公共文件夹 ==========
+
+export interface PublicFolder {
+  id: number;
+  parentId: number;
+  folderName: string;
+  userId: number;
+  uploaderName: string;
+  children?: PublicFolder[];
 }
 
 // ========== 视图模式 ==========

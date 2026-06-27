@@ -37,6 +37,13 @@ function SyncLogsPage(): React.ReactNode {
 
   const columns: TableProps<OperationLog>['columns'] = [
     {
+      title: '操作用户',
+      dataIndex: 'userName',
+      key: 'userName',
+      width: 120,
+      render: (name?: string) => name || '-',
+    },
+    {
       title: '操作类型',
       dataIndex: 'operType',
       key: 'operType',

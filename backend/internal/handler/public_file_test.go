@@ -322,7 +322,7 @@ func TestFindPublicFiles_Basic(t *testing.T) {
 		FullPath: "/data/p2.txt", Visibility: 1, IsDelete: 0,
 	})
 
-	files, total, err := repo.FindPublicFiles("", nil, "createTime", "desc", 0, 10)
+	files, total, err := repo.FindPublicFiles(0, "", nil, "createTime", "desc", 0, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), total)
 	assert.Len(t, files, 2)
@@ -343,7 +343,7 @@ func TestFindPublicFiles_ExcludesDeleted(t *testing.T) {
 		FullPath: "/data/d.txt", Visibility: 1, IsDelete: 1,
 	})
 
-	files, total, err := repo.FindPublicFiles("", nil, "createTime", "desc", 0, 10)
+	files, total, err := repo.FindPublicFiles(0, "", nil, "createTime", "desc", 0, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, files, 1)

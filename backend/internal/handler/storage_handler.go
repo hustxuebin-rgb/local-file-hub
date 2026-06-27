@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"local-file-hub/backend/internal/model"
+	"local-file-hub/backend/internal/repository"
 	"local-file-hub/backend/internal/service"
 	"local-file-hub/backend/pkg/response"
 
@@ -21,8 +22,9 @@ import (
 
 // StorageHandler 存储管理处理器
 type StorageHandler struct {
-	StorageService *service.StorageService
-	DB             *gorm.DB
+	StorageService   *service.StorageService
+	DB               *gorm.DB
+	OperationLogRepo *repository.OperationLogRepo
 }
 
 // DiskInfoHandler 获取磁盘信息（实时刷新文件系统状态）
@@ -115,11 +117,32 @@ func (h *StorageHandler) ManualSyncHandler(c *gin.Context) {
 	response.SuccessWithMsg(c, "手动同步已触发，请查看日志", nil)
 }
 
-// SyncLogsHandler 获取同步日志
+// SyncLogsHandler 获取同步日志（管理员视角，不限用户）
 func (h *StorageHandler) SyncLogsHandler(c *gin.Context) {
-	var logs []model.StorageSyncTask
-	h.DB.Order("id DESC").Limit(50).Find(&logs)
-	response.Success(c, logs)
+	page := c.DefaultQuery("page", "1")
+	pageSize := c.DefaultQuery("pageSize", "20")
+
+	limit := 20
+	if s, e := strconv.Atoi(pageSize); e == nil && s > 0 && s <= 100 {
+		limit = s
+	}
+
+	offset := 0
+	if p, e := strconv.Atoi(page); e == nil && p > 0 {
+		offset = (p - 1) * limit
+	}
+
+	var logs []OperationLogResp
+	var total int64
+
+	baseQuery := h.DB.Table("sys_operation_log").
+		Select("sys_operation_log.*, sys_user.nickname AS user_name").
+		Joins("LEFT JOIN sys_user ON sys_user.id = sys_operation_log.user_id")
+
+	baseQuery.Count(&total)
+	baseQuery.Order("sys_operation_log.create_time DESC").Offset(offset).Limit(limit).Find(&logs)
+
+	response.Success(c, map[string]interface{}{"total": total, "list": logs})
 }
 
 // QuotaHandler 获取用户配额

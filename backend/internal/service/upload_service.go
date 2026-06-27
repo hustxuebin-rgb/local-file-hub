@@ -58,7 +58,7 @@ type InitUploadResp struct {
 
 // InitUpload 初始化上传任务，含秒传检测
 // 若 fileMD5 非空且系统中已存在相同MD5的文件，则秒传完成
-func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64, fileMD5 string, folderID int64) (*InitUploadResp, error) {
+func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64, fileMD5 string, folderID int64, visibility int8) (*InitUploadResp, error) {
 	// 检查空间
 	if err := s.StorageService.CheckSpace(userID, fileSize); err != nil {
 		return nil, err
@@ -85,6 +85,7 @@ func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64
 			newFile.FileName = fileName
 			newFile.SaveName = existing.SaveName
 			newFile.FullPath = filepath.Join(disk.DiskPath, user.StorageRoot, existing.SaveName)
+			newFile.Visibility = visibility
 			newFile.CreateTime = time.Now()
 
 			if err := s.FileRepo.Create(&newFile); err != nil {
@@ -122,6 +123,7 @@ func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64
 		ChunkSize:  chunkSize,
 		TotalChunk: totalChunk,
 		FolderID:   folderID,
+		Visibility: visibility,
 		Status:     UploadStatusUploading,
 	}
 
@@ -257,6 +259,7 @@ func (s *UploadService) MergeChunks(taskID string, overwriteFileID int64) (*mode
 		MimeType:   &mimeType,
 		MD5:        md5Hash,
 		FullPath:   destPath,
+		Visibility: task.Visibility,
 		CreateTime: now,
 	}
 

@@ -3,8 +3,8 @@ import { useDidShow, usePullDownRefresh, useReachBottom } from '@tarojs/taro';
 import { useState, useCallback, useRef } from 'react';
 import Taro from '@tarojs/taro';
 import { Empty, Loading, ActionSheet, Cell } from '@nutui/nutui-react-taro';
-import { listPublicFiles, addFavorite, removeFavorite, listFavorites } from '../../utils/api';
-import type { PublicFile, FavoriteItem } from '../../utils/api';
+import { listPublicFiles, listPublicFolders, addFavorite, removeFavorite, listFavorites } from '../../utils/api';
+import type { PublicFile, FavoriteItem, Folder } from '../../utils/api';
 import './index.scss';
 
 const STORAGE_VIEW_MODE_KEY = 'public_view_mode';
@@ -37,9 +37,21 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+interface BreadcrumbItem {
+  id: number;
+  name: string;
+}
+
 interface PublicProps {}
 
 function PublicPage(_props: PublicProps): JSX.Element {
+  // ---- 文件夹状态 ----
+  const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
+  const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([]);
+  const [publicFolders, setPublicFolders] = useState<Folder[]>([]);
+  const [foldersLoading, setFoldersLoading] = useState(false);
+
+  // ---- 文件状态 ----
   const [files, setFiles] = useState<PublicFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -56,26 +68,28 @@ function PublicPage(_props: PublicProps): JSX.Element {
   const [favoriteLoading, setFavoriteLoading] = useState(false);
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 使用 ref 保持 currentFolderId 同步，避免 useCallback 闭包过期问题
+  const currentFolderIdRef = useRef<number | null>(null);
 
-  useDidShow(() => {
-    setPage(1);
-    setHasMore(true);
-    loadData(1);
-    loadFavorites();
-  });
+  // 封装 setter：同步更新 state 和 ref
+  const setCurrentFolder = useCallback((folderId: number | null) => {
+    currentFolderIdRef.current = folderId;
+    setCurrentFolderId(folderId);
+  }, []);
 
-  usePullDownRefresh(async () => {
-    setPage(1);
-    setHasMore(true);
-    await loadData(1);
-    await loadFavorites();
-    Taro.stopPullDownRefresh();
-  });
+  // ==================== 数据加载 ====================
 
-  useReachBottom(() => {
-    if (!hasMore || loadingMore || loading) return;
-    loadMore();
-  });
+  const loadPublicFolders = useCallback(async (parentId?: number | null) => {
+    setFoldersLoading(true);
+    try {
+      const res = await listPublicFolders(parentId ?? undefined);
+      setPublicFolders(res || []);
+    } catch {
+      /* 已在 request 中处理 */
+    } finally {
+      setFoldersLoading(false);
+    }
+  }, []);
 
   const loadFavorites = useCallback(async () => {
     try {
@@ -92,7 +106,9 @@ function PublicPage(_props: PublicProps): JSX.Element {
     if (pageNum === 1) setLoading(true);
     else setLoadingMore(true);
     try {
+      const folderId = currentFolderIdRef.current;
       const res = await listPublicFiles({
+        folderId: folderId ?? undefined,
         keyword: searchKeyword || undefined,
         sortBy,
         sortOrder,
@@ -117,6 +133,68 @@ function PublicPage(_props: PublicProps): JSX.Element {
   const loadMore = useCallback(() => {
     loadData(page + 1);
   }, [page, loadData]);
+
+  // ==================== 生命周期 ====================
+
+  useDidShow(() => {
+    setPage(1);
+    setHasMore(true);
+    loadPublicFolders(currentFolderIdRef.current);
+    loadData(1);
+    loadFavorites();
+  });
+
+  usePullDownRefresh(async () => {
+    setPage(1);
+    setHasMore(true);
+    await loadPublicFolders(currentFolderIdRef.current);
+    await loadData(1);
+    await loadFavorites();
+    Taro.stopPullDownRefresh();
+  });
+
+  useReachBottom(() => {
+    if (!hasMore || loadingMore || loading) return;
+    loadMore();
+  });
+
+  // ==================== 交互处理 ====================
+
+  /** 进入子文件夹 */
+  const handleEnterFolder = useCallback((folder: Folder) => {
+    setSearchKeyword('');
+    setCurrentFolder(folder.id);
+    setBreadcrumb((prev) => [...prev, { id: folder.id, name: folder.folderName }]);
+    setPublicFolders([]);
+    setFiles([]);
+    setPage(1);
+    setHasMore(true);
+    loadPublicFolders(folder.id);
+    loadData(1);
+  }, [setCurrentFolder, loadPublicFolders, loadData]);
+
+  /** 面包屑导航点击 */
+  const handleBreadcrumbClick = useCallback((index: number) => {
+    setSearchKeyword('');
+    setPublicFolders([]);
+    setFiles([]);
+    setPage(1);
+    setHasMore(true);
+
+    if (index === -1) {
+      // 返回顶层
+      setCurrentFolder(null);
+      setBreadcrumb([]);
+      loadPublicFolders();
+      loadData(1);
+    } else {
+      const target = breadcrumb[index];
+      setCurrentFolder(target.id);
+      setBreadcrumb((prev) => prev.slice(0, index + 1));
+      loadPublicFolders(target.id);
+      loadData(1);
+    }
+  }, [breadcrumb, setCurrentFolder, loadPublicFolders, loadData]);
 
   const handleSearch = useCallback((value: string) => {
     setSearchKeyword(value);
@@ -150,8 +228,8 @@ function PublicPage(_props: PublicProps): JSX.Element {
     }
   }, []);
 
-  const handleToggleFavorite = useCallback(async (fileId: number, e?: any) => {
-    if (e) e.stopPropagation();
+  const handleToggleFavorite = useCallback(async (fileId: number, e?: unknown) => {
+    if (e && typeof e === 'object' && 'stopPropagation' in (e as object)) (e as { stopPropagation: () => void }).stopPropagation();
     if (favoriteLoading) return;
     setFavoriteLoading(true);
     try {
@@ -170,8 +248,37 @@ function PublicPage(_props: PublicProps): JSX.Element {
 
   const currentSortLabel = SORT_OPTIONS.find((o) => o.sortBy === sortBy && o.sortOrder === sortOrder)?.label || '时间 ↓';
 
+  const showFolderArea = publicFolders.length > 0 && !searchKeyword;
+  const showFileArea = !loading || files.length > 0;
+  const hasAnyContent = publicFolders.length > 0 || files.length > 0;
+
   return (
     <View className="public-page">
+      {/* 面包屑导航 */}
+      {breadcrumb.length > 0 && (
+        <View className="public-page__breadcrumb">
+          <ScrollView className="public-page__breadcrumb-scroll" scrollX>
+            <Text
+              className="public-page__breadcrumb-item"
+              onClick={() => handleBreadcrumbClick(-1)}
+            >
+              公共空间
+            </Text>
+            {breadcrumb.map((item, index) => (
+              <View key={item.id} className="public-page__breadcrumb-segment">
+                <Text className="public-page__breadcrumb-sep">&gt;</Text>
+                <Text
+                  className={`public-page__breadcrumb-item ${index === breadcrumb.length - 1 ? 'public-page__breadcrumb-item--active' : ''}`}
+                  onClick={() => handleBreadcrumbClick(index)}
+                >
+                  {item.name}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
       {/* 搜索栏 */}
       <View className="public-page__search-bar">
         <View className="public-page__search-input-wrap">
@@ -231,9 +338,40 @@ function PublicPage(_props: PublicProps): JSX.Element {
           </View>
         ) : (
           <View className="public-page__content">
-            {files.length === 0 ? (
+            {/* 文件夹展示区（仅非搜索模式下、有文件夹时展示） */}
+            {showFolderArea && (
+              <View className="public-page__folder-area">
+                {foldersLoading && (
+                  <View className="public-page__folder-loading">
+                    <Loading>加载文件夹...</Loading>
+                  </View>
+                )}
+                <View className="public-page__folder-grid">
+                  {publicFolders.map((folder) => (
+                    <View
+                      key={folder.id}
+                      className="public-page__folder-item"
+                      onClick={() => handleEnterFolder(folder)}
+                    >
+                      <Text className="public-page__folder-icon">📁</Text>
+                      <Text className="public-page__folder-name">{folder.folderName}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* 文件夹与文件之间的分隔 */}
+            {showFolderArea && showFileArea && (
+              <View className="public-page__section-divider" />
+            )}
+
+            {/* 文件列表区 */}
+            {!hasAnyContent && !searchKeyword ? (
               <Empty description="暂无公共文件" />
-            ) : viewMode === 'list' ? (
+            ) : files.length === 0 && searchKeyword ? (
+              <Empty description="未搜索到相关文件" />
+            ) : files.length > 0 && viewMode === 'list' ? (
               <View className="public-page__file-list-view">
                 {files.map((file) => (
                   <View
@@ -264,7 +402,7 @@ function PublicPage(_props: PublicProps): JSX.Element {
                   </View>
                 ))}
               </View>
-            ) : (
+            ) : files.length > 0 ? (
               files.map((file) => (
                 <View
                   key={file.id}
@@ -286,7 +424,8 @@ function PublicPage(_props: PublicProps): JSX.Element {
                   </Text>
                 </View>
               ))
-            )}
+            ) : null}
+
             {loadingMore && (
               <View className="public-page__loading-more"><Loading>加载更多...</Loading></View>
             )}

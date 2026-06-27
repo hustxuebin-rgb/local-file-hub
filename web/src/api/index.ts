@@ -13,6 +13,7 @@ export {
   moveFolder,
   deleteFolder,
   getTree,
+  batchCreateFolders,
 } from './folder';
 
 export {
@@ -49,6 +50,7 @@ export {
 
 export {
   listPublicFiles,
+  listPublicFolders,
 } from './public';
 
 export {

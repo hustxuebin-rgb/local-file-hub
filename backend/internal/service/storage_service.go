@@ -300,9 +300,9 @@ func (s *StorageService) HardDeleteFile(fileID, userID int64) error {
 }
 
 // ListPublicFiles 列出所有用户公开的文件（分页，支持过滤和排序）
-func (s *StorageService) ListPublicFiles(keyword string, fileType *int8, sortBy, sortOrder string, page, pageSize int) ([]model.FileInfo, int64, error) {
+func (s *StorageService) ListPublicFiles(folderID int64, keyword string, fileType *int8, sortBy, sortOrder string, page, pageSize int) ([]model.FileInfo, int64, error) {
 	offset := (page - 1) * pageSize
-	return s.FileRepo.FindPublicFiles(keyword, fileType, sortBy, sortOrder, offset, pageSize)
+	return s.FileRepo.FindPublicFiles(folderID, keyword, fileType, sortBy, sortOrder, offset, pageSize)
 }
 
 // copyFile 复制文件

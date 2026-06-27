@@ -52,6 +52,7 @@ interface UploadInitReq {
   fileSize: number;
   md5: string;
   folderId: number | null;
+  visibility?: number;
 }
 
 interface UploadInitResp {
@@ -104,4 +105,10 @@ export function recycleRecover(id: number): Promise<ApiResponse> {
 
 export function recycleDelete(id: number): Promise<ApiResponse> {
   return client.post('/api/file/recycle/delete', { fileId: id }).then((res) => res.data);
+}
+
+/* ========== 文件可见性 ========== */
+
+export function updateFileVisibility(id: number, visibility: number): Promise<ApiResponse> {
+  return client.put(`/api/file/${id}/visibility`, { visibility }).then((res) => res.data);
 }

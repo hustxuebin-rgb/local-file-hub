@@ -13,6 +13,7 @@ type UploadTask struct {
 	TotalChunk    int       `gorm:"column:total_chunk;type:int;not null;default:0" json:"totalChunk"`
 	FinishedChunk int       `gorm:"column:finished_chunk;type:int;not null;default:0" json:"finishedChunk"`
 	FolderID      int64     `gorm:"column:folder_id;type:bigint;not null;default:0" json:"folderId"`
+	Visibility    int8      `gorm:"column:visibility;type:tinyint;not null;default:0" json:"visibility"`
 	Status        int8      `gorm:"column:status;type:tinyint;not null;default:1" json:"status"`
 	CreateTime    time.Time `gorm:"column:create_time;type:datetime;not null;autoCreateTime" json:"createTime"`
 }

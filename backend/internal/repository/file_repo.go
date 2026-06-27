@@ -114,12 +114,21 @@ func (r *FileRepo) HardDelete(id int64) error {
 	return r.DB.Delete(&model.FileInfo{}, id).Error
 }
 
+// UpdateVisibility 更新文件可见性
+func (r *FileRepo) UpdateVisibility(id int64, visibility int8) error {
+	return r.DB.Model(&model.FileInfo{}).Where("id = ?", id).Update("visibility", visibility).Error
+}
+
 // FindPublicFiles 查询所有用户公开且未删除的文件（分页，支持过滤和排序）
-func (r *FileRepo) FindPublicFiles(keyword string, fileType *int8, sortBy string, sortOrder string, offset, limit int) ([]model.FileInfo, int64, error) {
+func (r *FileRepo) FindPublicFiles(folderID int64, keyword string, fileType *int8, sortBy string, sortOrder string, offset, limit int) ([]model.FileInfo, int64, error) {
 	var files []model.FileInfo
 	var total int64
 
 	query := r.DB.Model(&model.FileInfo{}).Where("visibility = 1 AND is_delete = 0")
+
+	if folderID > 0 {
+		query = query.Where("folder_id = ?", folderID)
+	}
 
 	if keyword != "" {
 		query = query.Where("file_name LIKE ?", "%"+keyword+"%")

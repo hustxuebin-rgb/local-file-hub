@@ -2,14 +2,14 @@ import { Tabs } from 'antd';
 import type { TabsProps } from 'antd';
 import type { FileCategory } from '@/types';
 
-/** 前后端 fileType 映射：1=图片 2=视频 3=音频 4=文档 5=压缩包(前端判断) 0/其他=全部 */
+/** 前后端 fileType 映射：1=图片 2=视频 3=音频 4=文档 5=其他 */
 const CATEGORIES: FileCategory[] = [
   { key: 'all', label: '全部' },
   { key: 'image', label: '图片', fileType: 1 },
   { key: 'video', label: '视频', fileType: 2 },
+  { key: 'audio', label: '音频', fileType: 3 },
   { key: 'doc', label: '文档', fileType: 4 },
-  { key: 'archive', label: '压缩包', fileType: 5 },
-  { key: 'other', label: '其他', fileType: 0 },
+  { key: 'other', label: '其他', fileType: 5 },
 ];
 
 interface FileCategoryTabsProps {

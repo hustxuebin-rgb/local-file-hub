@@ -36,3 +36,29 @@ export function deleteFolder(id: number): Promise<ApiResponse> {
 export function getTree(params?: { isPublic?: number }): Promise<ApiResponse<Folder[]>> {
   return client.get('/api/folder/tree', { params }).then((res) => res.data);
 }
+
+/* ========== 批量创建文件夹 ========== */
+
+export interface BatchFolderItem {
+  tempKey: string;
+  folderName: string;
+}
+
+export interface BatchFolderResult {
+  tempKey: string;
+  id: number;
+  folderName: string;
+  status: 'created' | 'reused';
+}
+
+export interface BatchCreateFoldersData {
+  parentId: number | null;
+  isPublic?: number;
+  folders: BatchFolderItem[];
+}
+
+export function batchCreateFolders(
+  data: BatchCreateFoldersData,
+): Promise<ApiResponse<{ folders: BatchFolderResult[] }>> {
+  return client.post('/api/folder/batch', data).then((res) => res.data);
+}

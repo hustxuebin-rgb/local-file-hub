@@ -72,11 +72,15 @@ func (s *FavoriteService) RemoveFavorite(userID int64, targetType int8, targetID
 	return s.FavoriteRepo.Delete(userID, targetType, targetID)
 }
 
-// GetFavorites 获取收藏列表（分页，带关联信息）
-func (s *FavoriteService) GetFavorites(userID int64, page, pageSize int) ([]FavoriteResp, int64, error) {
+// GetFavorites 获取收藏列表（分页，支持关键词搜索、目标类型过滤和排序）
+// keyword: 搜索关键词，模糊匹配目标名称；为空时不应用过滤
+// targetType: nil 表示不过滤，否则按指定类型筛选
+// sortBy: 排序字段标识，由 handler 层白名单校验后传入
+// sortOrder: 排序方向，仅 asc 或 desc
+func (s *FavoriteService) GetFavorites(userID int64, page, pageSize int, keyword string, targetType *int8, sortBy, sortOrder string) ([]FavoriteResp, int64, error) {
 	offset := (page - 1) * pageSize
 
-	favorites, total, err := s.FavoriteRepo.FindByUserID(userID, offset, pageSize)
+	favorites, total, err := s.FavoriteRepo.FindByUserIDWithFilter(userID, offset, pageSize, keyword, targetType, sortBy, sortOrder)
 	if err != nil {
 		return nil, 0, err
 	}

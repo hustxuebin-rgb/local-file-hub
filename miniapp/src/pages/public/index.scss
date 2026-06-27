@@ -4,7 +4,42 @@
   display: flex;
   flex-direction: column;
 
-  // 搜索栏
+  // ==================== 面包屑导航 ====================
+
+  &__breadcrumb {
+    padding: 12rpx 24rpx;
+    background: #ffffff;
+    border-bottom: 2rpx solid #f0f0f0;
+  }
+
+  &__breadcrumb-scroll {
+    white-space: nowrap;
+    width: 100%;
+  }
+
+  &__breadcrumb-segment {
+    display: inline;
+  }
+
+  &__breadcrumb-sep {
+    font-size: 22rpx;
+    color: #cccccc;
+    margin: 0 8rpx;
+  }
+
+  &__breadcrumb-item {
+    font-size: 24rpx;
+    color: #1677ff;
+    display: inline;
+
+    &--active {
+      color: #333333;
+      font-weight: 500;
+    }
+  }
+
+  // ==================== 搜索栏 ====================
+
   &__search-bar {
     padding: 16rpx 24rpx;
     background: #ffffff;
@@ -39,7 +74,8 @@
     flex-shrink: 0;
   }
 
-  // 工具栏
+  // ==================== 工具栏 ====================
+
   &__toolbar {
     display: flex;
     align-items: center;
@@ -80,7 +116,8 @@
     }
   }
 
-  // 滚动容器
+  // ==================== 滚动容器 ====================
+
   &__scroll {
     flex: 1;
     height: 0;
@@ -98,7 +135,63 @@
     padding-bottom: 40rpx;
   }
 
-  // 图标视图
+  // ==================== 文件夹展示区 ====================
+
+  &__folder-area {
+    margin-bottom: 8rpx;
+  }
+
+  &__folder-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24rpx 0;
+  }
+
+  &__folder-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16rpx;
+  }
+
+  &__folder-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 156rpx;
+    height: 156rpx;
+    background: #ffffff;
+    border-radius: 16rpx;
+    padding: 16rpx;
+    box-sizing: border-box;
+  }
+
+  &__folder-icon {
+    font-size: 48rpx;
+    margin-bottom: 8rpx;
+  }
+
+  &__folder-name {
+    font-size: 22rpx;
+    color: #333333;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 100%;
+  }
+
+  // ==================== 区域分隔 ====================
+
+  &__section-divider {
+    height: 2rpx;
+    background: #e8e8e8;
+    margin: 8rpx 0 20rpx 0;
+  }
+
+  // ==================== 图标视图（网格） ====================
+
   &__file-item {
     display: flex;
     align-items: center;
@@ -135,7 +228,8 @@
     color: #999999;
   }
 
-  // 收藏按钮
+  // ==================== 收藏按钮 ====================
+
   &__favorite-btn {
     font-size: 36rpx;
     padding: 8rpx;
@@ -147,7 +241,8 @@
     }
   }
 
-  // 列表视图
+  // ==================== 列表视图 ====================
+
   &__file-list-view {
     background: #ffffff;
     border-radius: 16rpx;
@@ -191,7 +286,8 @@
     white-space: nowrap;
   }
 
-  // 加载更多
+  // ==================== 加载更多 ====================
+
   &__loading-more {
     display: flex;
     align-items: center;
@@ -204,55 +300,5 @@
     padding: 24rpx 0;
     font-size: 24rpx;
     color: #cccccc;
-  }
-}
-.public-page {
-  min-height: 100vh;
-  background: #f5f5f5;
-
-  &__loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 80rpx 0;
-  }
-
-  &__content {
-    padding: 16rpx 24rpx;
-  }
-
-  &__file-item {
-    display: flex;
-    align-items: center;
-    padding: 20rpx;
-    background: #ffffff;
-    border-radius: 16rpx;
-    margin-bottom: 12rpx;
-  }
-
-  &__file-icon {
-    font-size: 40rpx;
-    margin-right: 20rpx;
-  }
-
-  &__file-info {
-    flex: 1;
-    overflow: hidden;
-  }
-
-  &__file-name {
-    display: block;
-    font-size: 28rpx;
-    color: #333333;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin-bottom: 4rpx;
-  }
-
-  &__file-meta {
-    display: block;
-    font-size: 22rpx;
-    color: #999999;
   }
 }

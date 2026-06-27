@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Card, Table, Button, Space, Tag, message, Popconfirm } from 'antd';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Card, Table, Button, Space, Tag, message, Popconfirm, Segmented } from 'antd';
 import type { TableProps } from 'antd';
 import { StarFilled, EyeOutlined } from '@ant-design/icons';
 import { useFavoriteStore } from '@/stores/useFavoriteStore';
@@ -7,8 +7,10 @@ import { useViewStore } from '@/stores/useViewStore';
 import { removeFavorite } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
 import FileViewToggle from '@/components/shared/FileViewToggle';
+import FileSearchBar from '@/components/shared/FileSearchBar';
+import FileSortDropdown from '@/components/shared/FileSortDropdown';
 import FileGridView, { type GridFileItem } from '@/components/shared/FileGridView';
-import type { Favorite } from '@/types';
+import type { Favorite, SortOption } from '@/types';
 
 function formatFileSize(size: number): string {
   if (size < 1024) return `${size} B`;
@@ -23,27 +25,69 @@ const TARGET_TYPE_MAP: Record<number, { label: string; color: string }> = {
   3: { label: '分享', color: 'green' },
 };
 
+const categoryOptions = [
+  { label: '全部', value: 'all' },
+  { label: '文件', value: '1' },
+  { label: '文件夹', value: '2' },
+  { label: '分享', value: '3' },
+];
+
 function FavoritesPage(): React.ReactNode {
   const { viewMode } = useViewStore();
   const { favorites, total, loading, fetchFavorites } = useFavoriteStore();
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
+  const [keyword, setKeyword] = useState('');
+  const [categoryKey, setCategoryKey] = useState('all');
+  const [targetType, setTargetType] = useState<number | undefined>(undefined);
+  const [sort, setSort] = useState<SortOption>({ field: 'createTime', order: 'desc' });
 
   useEffect(() => {
-    fetchFavorites(page, pageSize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+    fetchFavorites(page, pageSize, keyword || undefined, targetType);
+  }, [page, pageSize, keyword, targetType, fetchFavorites]);
+
+  // 客户端排序：后端暂不支持 sortBy/sortOrder 时，前端对 favorites 进行排序
+  const sortedFavorites = useMemo(() => {
+    const list = [...favorites];
+    list.sort((a, b) => {
+      let cmp = 0;
+      if (sort.field === 'name') {
+        cmp = (a.targetName || '').localeCompare(b.targetName || '');
+      } else if (sort.field === 'fileSize') {
+        cmp = (a.targetSize || 0) - (b.targetSize || 0);
+      } else if (sort.field === 'createTime') {
+        cmp = (a.createTime || '').localeCompare(b.createTime || '');
+      }
+      return sort.order === 'desc' ? -cmp : cmp;
+    });
+    return list;
+  }, [favorites, sort]);
+
+  const handleSearch = useCallback((value: string) => {
+    setKeyword(value);
+    setPage(1);
+  }, []);
+
+  const handleCategoryChange = useCallback((val: string) => {
+    setCategoryKey(val);
+    setTargetType(val === 'all' ? undefined : Number(val));
+    setPage(1);
+  }, []);
+
+  const handleSortChange = useCallback((newSort: SortOption) => {
+    setSort(newSort);
+  }, []);
 
   const handleRemoveFavorite = useCallback(async (record: Favorite) => {
     try {
       await removeFavorite({ targetType: record.targetType, targetId: record.targetId });
       message.success('已取消收藏');
-      fetchFavorites(page, pageSize);
+      fetchFavorites(page, pageSize, keyword || undefined, targetType);
     } catch (err: unknown) {
       const typedErr = err as { response?: { data?: { code?: number } } };
       message.error(getErrorMessage(typedErr.response?.data?.code));
     }
-  }, [fetchFavorites, page, pageSize]);
+  }, [fetchFavorites, page, pageSize, keyword, targetType]);
 
   const handleView = useCallback((record: Favorite) => {
     if (record.targetType === 3) {
@@ -112,7 +156,7 @@ function FavoritesPage(): React.ReactNode {
     },
   ];
 
-  const gridData: GridFileItem[] = favorites.map((f) => ({
+  const gridData: GridFileItem[] = sortedFavorites.map((f) => ({
     id: f.id,
     userId: 0,
     folderId: 0,
@@ -135,15 +179,22 @@ function FavoritesPage(): React.ReactNode {
   }));
 
   return (
-    <Card
-      title="我的收藏"
-      extra={<FileViewToggle />}
-    >
+    <Card title="我的收藏">
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+        <FileSearchBar onSearch={handleSearch} placeholder="搜索收藏" />
+        <Segmented
+          options={categoryOptions}
+          value={categoryKey}
+          onChange={(val) => handleCategoryChange(val as string)}
+        />
+        <FileSortDropdown value={sort} onChange={handleSortChange} />
+        <FileViewToggle />
+      </div>
       {viewMode === 'list' ? (
         <Table<Favorite>
           rowKey="id"
           columns={columns}
-          dataSource={favorites}
+          dataSource={sortedFavorites}
           loading={loading}
           pagination={{
             current: page,
@@ -160,7 +211,7 @@ function FavoritesPage(): React.ReactNode {
           files={gridData}
           loading={loading}
           onRemoveFavorite={(file) => {
-            const fav = favorites.find(
+            const fav = sortedFavorites.find(
               (f) => f.targetType === file.targetType && f.targetId === file.targetId,
             );
             if (fav) handleRemoveFavorite(fav);

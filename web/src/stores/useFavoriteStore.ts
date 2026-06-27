@@ -7,7 +7,7 @@ interface FavoriteState {
   total: number;
   loading: boolean;
 
-  fetchFavorites: (page?: number, pageSize?: number) => Promise<void>;
+  fetchFavorites: (page?: number, pageSize?: number, keyword?: string, targetType?: number, sortBy?: string, sortOrder?: string) => Promise<void>;
   addFavorite: (targetType: number, targetId: number) => Promise<void>;
   removeFavorite: (targetType: number, targetId: number) => Promise<void>;
 }
@@ -17,10 +17,10 @@ export const useFavoriteStore = create<FavoriteState>((set, get) => ({
   total: 0,
   loading: false,
 
-  fetchFavorites: async (page = 1, pageSize = 20) => {
+  fetchFavorites: async (page = 1, pageSize = 20, keyword, targetType, sortBy, sortOrder) => {
     set({ loading: true });
     try {
-      const res = await listFavorites({ page, pageSize });
+      const res = await listFavorites({ page, pageSize, keyword, targetType, sortBy, sortOrder });
       if (res.data) {
         set({ favorites: res.data.list, total: res.data.total });
       }

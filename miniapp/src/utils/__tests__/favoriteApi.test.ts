@@ -31,12 +31,12 @@ describe('favoriteApi', () => {
   });
 
   describe('removeFavorite', () => {
-    it('应该调用 DELETE /api/favorite 并通过查询参数传递 targetType 和 targetId', async () => {
+    it('应该调用 DELETE /api/favorite 并通过 body 传递 targetType 和 targetId', async () => {
       mockDelete.mockResolvedValue(undefined);
 
       await removeFavorite({ targetType: 1, targetId: 123 });
 
-      expect(mockDelete).toHaveBeenCalledWith('/api/favorite?targetType=1&targetId=123');
+      expect(mockDelete).toHaveBeenCalledWith('/api/favorite', { targetType: 1, targetId: 123 });
     });
   });
 

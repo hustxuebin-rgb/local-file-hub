@@ -84,3 +84,17 @@ func (r *FolderRepo) CountByUser(userID int64) (int64, error) {
 	err := r.DB.Model(&model.Folder{}).Where("user_id = ?", userID).Count(&count).Error
 	return count, err
 }
+
+// FindPublicFolders 查找公开文件夹（is_public=1），支持按 parentID 过滤
+// parentID > 0 时过滤指定父目录，parentID = 0 时返回根目录（parent_id=0）
+func (r *FolderRepo) FindPublicFolders(parentID int64) ([]model.Folder, error) {
+	var folders []model.Folder
+	err := r.DB.Where("is_public = ? AND parent_id = ?", 1, parentID).
+		Order("sort ASC, id ASC").Find(&folders).Error
+	return folders, err
+}
+
+// WithTx 返回绑定到事务的新 FolderRepo
+func (r *FolderRepo) WithTx(tx *gorm.DB) *FolderRepo {
+	return &FolderRepo{DB: tx}
+}

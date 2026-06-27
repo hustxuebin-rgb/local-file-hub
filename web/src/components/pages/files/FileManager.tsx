@@ -26,6 +26,8 @@ import {
   ShareAltOutlined,
   ReloadOutlined,
   StarOutlined,
+  GlobalOutlined,
+  LockOutlined,
 } from '@ant-design/icons';
 import { useFileStore } from '@/stores/useFileStore';
 import {
@@ -34,10 +36,11 @@ import {
   deleteFolder,
   deleteFile,
   addFavorite,
+  listFolders,
 } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
 import type { FileInfo, Folder, SortOption } from '@/types';
-import { downloadFile, previewFile } from '@/api/file';
+import { downloadFile, previewFile, updateFileVisibility } from '@/api/file';
 import { useViewStore } from '@/stores/useViewStore';
 import FileSearchBar from '@/components/shared/FileSearchBar';
 import FileCategoryTabs from '@/components/shared/FileCategoryTabs';
@@ -83,8 +86,13 @@ function FileManager(): React.ReactNode {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareResource, setShareResource] = useState<{ id: number; shareType: number; resourceName?: string } | null>(null);
 
+  // 子文件夹
+  const [subFolders, setSubFolders] = useState<Folder[]>([]);
+  const [subFoldersLoading, setSubFoldersLoading] = useState(false);
+
   useEffect(() => {
-    fetchTree();
+    // 按当前分区加载对应文件夹树
+    fetchTree(currentPartition);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -108,12 +116,34 @@ function FileManager(): React.ReactNode {
   const handleTabChange = (key: string) => {
     setPartition(Number(key));
     setPage(1);
+    fetchTree(Number(key));
   };
 
   const handleTreeSelect: TreeProps['onSelect'] = (keys) => {
     const id = keys[0] as number | undefined;
     setFolderId(id ?? null);
     setPage(1);
+    // 选中文件夹后获取子文件夹
+    fetchSubFolders(id ?? null);
+  };
+
+  /** 获取当前选中文件夹的子文件夹 */
+  const fetchSubFolders = async (folderId: number | null) => {
+    if (folderId === null) {
+      setSubFolders([]);
+      return;
+    }
+    setSubFoldersLoading(true);
+    try {
+      const res = await listFolders(folderId);
+      if (res.data) {
+        setSubFolders(res.data);
+      }
+    } catch {
+      setSubFolders([]);
+    } finally {
+      setSubFoldersLoading(false);
+    }
   };
 
   const formatFileSize = (size: number): string => {
@@ -138,8 +168,9 @@ function FileManager(): React.ReactNode {
       message.success('创建成功');
       setCreateModalOpen(false);
       setNewFolderName('');
-      fetchTree();
+      fetchTree(currentPartition);
       fetchFiles({ page, pageSize });
+      fetchSubFolders(currentFolderId);
     } catch (err: unknown) {
       const typedErr = err as { response?: { data?: { code?: number } } };
       message.error(getErrorMessage(typedErr.response?.data?.code));
@@ -157,8 +188,9 @@ function FileManager(): React.ReactNode {
       setRenameModalOpen(false);
       setRenameTarget(null);
       setNewRename('');
-      fetchTree();
+      fetchTree(currentPartition);
       fetchFiles({ page, pageSize });
+      fetchSubFolders(currentFolderId);
     } catch (err: unknown) {
       const typedErr = err as { response?: { data?: { code?: number } } };
       message.error(getErrorMessage(typedErr.response?.data?.code));
@@ -171,8 +203,9 @@ function FileManager(): React.ReactNode {
     try {
       await deleteFolder(id);
       message.success('删除成功');
-      fetchTree();
+      fetchTree(currentPartition);
       fetchFiles({ page, pageSize });
+      fetchSubFolders(currentFolderId);
     } catch (err: unknown) {
       const typedErr = err as { response?: { data?: { code?: number } } };
       message.error(getErrorMessage(typedErr.response?.data?.code));
@@ -225,6 +258,25 @@ function FileManager(): React.ReactNode {
     try {
       await addFavorite({ targetType: 1, targetId: id });
       message.success('收藏成功');
+    } catch (err: unknown) {
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    }
+  };
+
+  const handleToggleVisibility = async (file: FileInfo) => {
+    const newVisibility = file.visibility === 1 ? 0 : 1;
+    try {
+      await updateFileVisibility(file.id, newVisibility);
+      message.success(newVisibility === 1 ? '已设为公共' : '已设为私有');
+      fetchFiles({
+        page,
+        pageSize,
+        keyword: keyword || undefined,
+        fileType,
+        sortBy: sort.field === 'name' ? 'fileName' : sort.field === 'fileSize' ? 'fileSize' : 'createTime',
+        sortOrder: sort.order,
+      });
     } catch (err: unknown) {
       const typedErr = err as { response?: { data?: { code?: number } } };
       message.error(getErrorMessage(typedErr.response?.data?.code));
@@ -284,7 +336,7 @@ function FileManager(): React.ReactNode {
       key: 'fileType',
       width: 100,
       render: (type: number) => {
-        const typeMap: Record<number, string> = { 0: '其他', 1: '图片', 2: '视频', 3: '音频', 4: '文档' };
+        const typeMap: Record<number, string> = { 1: '图片', 2: '视频', 3: '音频', 4: '文档', 5: '其他' };
         return typeMap[type] ?? '其他';
       },
     },
@@ -318,6 +370,14 @@ function FileManager(): React.ReactNode {
           </Button>
           <Button type="link" size="small" icon={<ShareAltOutlined />} onClick={() => handleShareFile(record)}>
             分享
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            icon={record.visibility === 1 ? <GlobalOutlined /> : <LockOutlined />}
+            onClick={() => handleToggleVisibility(record)}
+          >
+            {record.visibility === 1 ? '公共' : '私有'}
           </Button>
           <Popconfirm
             title="确认删除此文件？"
@@ -376,11 +436,9 @@ function FileManager(): React.ReactNode {
     >
       <Tabs activeKey={String(currentPartition)} items={tabsItems} onChange={handleTabChange} />
 
-      {/* 工具栏：搜索 + 分类 + 排序 + 视图切换 + 批量分享 */}
+      {/* 工具栏 */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
         <FileSearchBar onSearch={handleSearch} placeholder="搜索文件" />
-        <FileSortDropdown value={sort} onChange={handleSortChange} />
-        <FileViewToggle />
         {selectedRows.length > 0 && (
           <Button
             type="primary"
@@ -391,9 +449,6 @@ function FileManager(): React.ReactNode {
           </Button>
         )}
       </div>
-
-      {/* 分类标签 - 横跨全宽，位于文件列表上方 */}
-      <FileCategoryTabs activeKey={categoryKey} onChange={handleCategoryChange} />
 
       <div style={{ display: 'flex', gap: 16 }}>
         <div style={{ width: 240, minWidth: 240 }}>
@@ -410,6 +465,44 @@ function FileManager(): React.ReactNode {
           </Card>
         </div>
         <div style={{ flex: 1 }}>
+          {/* 子文件夹区域 */}
+          {currentFolderId !== null && subFolders.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 8,
+                marginBottom: 12,
+                padding: '8px 12px',
+                background: '#fafafa',
+                borderRadius: 6,
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ fontSize: 13, color: '#888', marginRight: 4 }}>子文件夹：</span>
+              {subFolders.map((folder) => (
+                <Tag
+                  key={folder.id}
+                  icon={<FolderOutlined />}
+                  color="processing"
+                  style={{ cursor: 'pointer', margin: 0 }}
+                  onClick={() => {
+                    setFolderId(folder.id);
+                    setPage(1);
+                    fetchSubFolders(folder.id);
+                  }}
+                >
+                  {folder.folderName}
+                </Tag>
+              ))}
+            </div>
+          )}
+          {/* 文件操作区：分类 + 排序 + 视图，均作用于当前文件夹内文件 */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <FileCategoryTabs activeKey={categoryKey} onChange={handleCategoryChange} />
+            <FileSortDropdown value={sort} onChange={handleSortChange} />
+            <FileViewToggle />
+          </div>
           {viewMode === 'list' ? (
             <Table<FileInfo>
               rowKey="id"

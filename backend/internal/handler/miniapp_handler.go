@@ -102,11 +102,13 @@ func (h *MiniappHandler) AlbumUploadHandler(c *gin.Context) {
 	fileType := int8(5) // 默认其他
 	lowerExt := filepath.Ext(header.Filename)
 	switch lowerExt {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp":
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".ico":
 		fileType = 1 // 图片
-	case ".mp4", ".mov", ".avi", ".mkv", ".wmv":
+	case ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm", ".m4v":
 		fileType = 2 // 视频
-	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt":
+	case ".mp3", ".wav", ".aac", ".flac", ".ogg", ".wma", ".m4a":
+		fileType = 3 // 音频
+	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".md":
 		fileType = 4 // 文档
 	}
 

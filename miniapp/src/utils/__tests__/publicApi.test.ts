@@ -11,12 +11,60 @@ jest.mock('../request', () => ({
   },
 }));
 
-import { listPublicFiles } from '../api';
+import { listPublicFiles, listPublicFolders } from '../api';
 
 describe('publicApi', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
+
+  // ====== listPublicFolders ======
+
+  describe('listPublicFolders', () => {
+    it('无参数调用应该获取顶层文件夹', async () => {
+      mockGet.mockResolvedValue([]);
+
+      await listPublicFolders();
+
+      expect(mockGet).toHaveBeenCalledWith('/api/folder/public', {
+        skipErrorToast: true,
+        params: undefined,
+      });
+    });
+
+    it('传入 parentId 应该传递参数', async () => {
+      mockGet.mockResolvedValue([]);
+
+      await listPublicFolders(5);
+
+      expect(mockGet).toHaveBeenCalledWith('/api/folder/public', {
+        skipErrorToast: true,
+        params: { parentId: 5 },
+      });
+    });
+
+    it('应该正确返回文件夹列表', async () => {
+      const mockFolders = [
+        { id: 1, folderName: '文档', parentId: 0, fullPath: '/文档', createTime: '2025-01-01' },
+        { id: 2, folderName: '图片', parentId: 0, fullPath: '/图片', createTime: '2025-01-02' },
+      ];
+      mockGet.mockResolvedValue(mockFolders);
+
+      const result = await listPublicFolders();
+
+      expect(result).toEqual(mockFolders);
+      expect(result).toHaveLength(2);
+      expect(result[0].folderName).toBe('文档');
+    });
+
+    it('网络失败时应该抛出错误', async () => {
+      mockGet.mockRejectedValue(new Error('Network error'));
+
+      await expect(listPublicFolders()).rejects.toThrow('Network error');
+    });
+  });
+
+  // ====== listPublicFiles ======
 
   describe('listPublicFiles', () => {
     it('基本调用应该传递分页参数和 skipErrorToast', async () => {
@@ -81,13 +129,30 @@ describe('publicApi', () => {
       expect(result.total).toBe(5);
       expect(result.list).toHaveLength(1);
     });
+
+    it('传入 folderId 参数应该传递给 API', async () => {
+      mockGet.mockResolvedValue({ total: 0, list: [] });
+
+      await listPublicFiles({ folderId: 10, page: 1, pageSize: 20 });
+
+      expect(mockGet).toHaveBeenCalledWith('/api/file/public', {
+        params: { folderId: 10, page: 1, pageSize: 20 },
+        skipErrorToast: true,
+      });
+    });
   });
 
   describe('异常路径', () => {
-    it('网络失败时应该抛出错误', async () => {
+    it('listPublicFiles 网络失败时应该抛出错误', async () => {
       mockGet.mockRejectedValue(new Error('Network error'));
 
       await expect(listPublicFiles({ page: 1, pageSize: 20 })).rejects.toThrow('Network error');
+    });
+
+    it('listPublicFolders 网络失败时应该抛出错误', async () => {
+      mockGet.mockRejectedValue(new Error('Network error'));
+
+      await expect(listPublicFolders()).rejects.toThrow('Network error');
     });
   });
 });

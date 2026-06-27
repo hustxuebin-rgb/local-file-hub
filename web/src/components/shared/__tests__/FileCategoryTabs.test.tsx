@@ -10,7 +10,7 @@ describe('FileCategoryTabs', () => {
     expect(screen.getByText('图片')).toBeInTheDocument();
     expect(screen.getByText('视频')).toBeInTheDocument();
     expect(screen.getByText('文档')).toBeInTheDocument();
-    expect(screen.getByText('压缩包')).toBeInTheDocument();
+    expect(screen.getByText('音频')).toBeInTheDocument();
     expect(screen.getByText('其他')).toBeInTheDocument();
   });
 

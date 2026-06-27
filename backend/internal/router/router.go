@@ -55,6 +55,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	deviceHandler := &handler.DeviceHandler{DeviceRepo: deviceRepo}
 	folderHandler := &handler.FolderHandler{
 		FolderRepo:     folderRepo,
+		UserRepo:       userRepo,
 		StorageService: storageService,
 	}
 	fileHandler := &handler.FileHandler{
@@ -84,8 +85,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	favoriteHandler := &handler.FavoriteHandler{FavoriteService: favoriteService}
 
 	storageHandler := &handler.StorageHandler{
-		StorageService: storageService,
-		DB:             db,
+		StorageService:   storageService,
+		DB:               db,
+		OperationLogRepo: operationLogRepo,
 	}
 
 	miniappHandler := &handler.MiniappHandler{StorageService: storageService}
@@ -101,6 +103,10 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	// 注册全局中间件链：CORS → Logger → Auth
 	r.Use(middleware.Cors())
 	r.Use(middleware.Logger())
+
+	// 免登录路由（在 Auth 中间件之前注册）
+	r.GET("/api/folder/public", folderHandler.PublicTree)
+
 	r.Use(middleware.Auth(cfg.JWT.Secret))
 
 	// 健康检查
@@ -152,6 +158,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	folderGroup := r.Group("/api/folder")
 	{
 		folderGroup.POST("", folderHandler.CreateFolder)
+		folderGroup.POST("/batch", folderHandler.BatchCreateFolders)
 		folderGroup.GET("", folderHandler.ListFolders)
 		folderGroup.GET("/:id", folderHandler.GetFolder)
 		folderGroup.PUT("/:id", folderHandler.UpdateFolder)
@@ -181,6 +188,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		fileGroup.GET("/:id/preview", fileHandler.Preview)
 		fileGroup.DELETE("/:id", fileHandler.Delete)
 		fileGroup.POST("/move", fileHandler.Move)
+		fileGroup.PUT("/:id/visibility", fileHandler.UpdateVisibility)
 
 		// 回收站子路由组
 		recycleGroup := fileGroup.Group("/recycle")

@@ -2,8 +2,11 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"local-file-hub/backend/internal/model"
@@ -18,6 +21,7 @@ import (
 // FolderHandler 文件夹处理器
 type FolderHandler struct {
 	FolderRepo     *repository.FolderRepo
+	UserRepo       *repository.UserRepo
 	StorageService *service.StorageService
 }
 
@@ -384,6 +388,229 @@ func (h *FolderHandler) GetTree(c *gin.Context) {
 
 	// 构建树结构（迭代有序切片保证顺序确定性，非 map）
 	var roots []*FolderTreeNode
+	for i := range folders {
+		node := nodeMap[folders[i].ID]
+		if node.ParentID == 0 {
+			roots = append(roots, node)
+		} else {
+			parent, ok := nodeMap[node.ParentID]
+			if ok {
+				parent.Children = append(parent.Children, node)
+			} else {
+				roots = append(roots, node)
+			}
+		}
+	}
+
+	response.Success(c, roots)
+}
+
+// ==================== 批量创建文件夹 ====================
+
+// BatchCreateFolderReq 批量创建文件夹请求
+type BatchCreateFolderReq struct {
+	ParentID int64             `json:"parentId"`
+	IsPublic *int8             `json:"isPublic"`
+	Folders  []BatchFolderItem `json:"folders"`
+}
+
+// BatchFolderItem 批量文件夹项
+type BatchFolderItem struct {
+	TempKey    string `json:"tempKey" binding:"required"`
+	FolderName string `json:"folderName" binding:"required"`
+}
+
+// BatchFolderResult 批量文件夹结果
+type BatchFolderResult struct {
+	TempKey    string `json:"tempKey"`
+	ID         int64  `json:"id"`
+	FolderName string `json:"folderName"`
+	Status     string `json:"status"`
+}
+
+// BatchCreateFolderResp 批量创建文件夹响应
+type BatchCreateFolderResp struct {
+	Folders []BatchFolderResult `json:"folders"`
+}
+
+// BatchCreateFolders 批量创建文件夹
+// 对文件夹按 tempKey 拓扑排序后逐层创建，同名冲突时复用已有文件夹
+func (h *FolderHandler) BatchCreateFolders(c *gin.Context) {
+	var req BatchCreateFolderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	if len(req.Folders) == 0 {
+		response.Error(c, response.CodeBadRequest, "folders 不能为空")
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	// 拓扑排序：按 tempKey 中 "/" 的数量升序，确保父路径先于子路径创建
+	sorted := make([]BatchFolderItem, len(req.Folders))
+	copy(sorted, req.Folders)
+	sort.Slice(sorted, func(i, j int) bool {
+		return strings.Count(sorted[i].TempKey, "/") < strings.Count(sorted[j].TempKey, "/")
+	})
+
+	// 在事务中执行批量创建，确保全部成功或全部回滚
+	var results []BatchFolderResult
+	err := h.FolderRepo.DB.Transaction(func(tx *gorm.DB) error {
+		txRepo := h.FolderRepo.WithTx(tx)
+		created := make(map[string]int64)
+		results = make([]BatchFolderResult, 0, len(sorted))
+
+		for _, item := range sorted {
+			var parentID int64
+
+			if idx := strings.LastIndex(item.TempKey, "/"); idx >= 0 {
+				// 子文件夹：从映射中查找父文件夹 ID
+				parentKey := item.TempKey[:idx]
+				pid, ok := created[parentKey]
+				if !ok {
+					return fmt.Errorf("父文件夹未找到: %s", parentKey)
+				}
+				parentID = pid
+			} else {
+				// 顶层文件夹：使用请求中的 parentID
+				parentID = req.ParentID
+			}
+
+			// 同名冲突检测
+			existing, ferr := txRepo.FindByNameUnderParent(userID, parentID, item.FolderName)
+			if ferr != nil && !errors.Is(ferr, gorm.ErrRecordNotFound) {
+				return ferr
+			}
+
+			if existing != nil {
+				// 同名文件夹已存在，复用
+				created[item.TempKey] = existing.ID
+				results = append(results, BatchFolderResult{
+					TempKey:    item.TempKey,
+					ID:         existing.ID,
+					FolderName: item.FolderName,
+					Status:     "reused",
+				})
+				continue
+			}
+
+			// 构建完整路径
+			var parentPath string
+			if parentID > 0 {
+				parent, ferr := txRepo.FindByID(parentID)
+				if ferr != nil {
+					return ferr
+				}
+				parentPath = parent.FullPath
+			} else {
+				user, ferr := h.StorageService.GetUserQuota(userID)
+				if ferr != nil {
+					return ferr
+				}
+				parentPath = user.StorageRoot
+			}
+
+			fullPath := filepath.Join(parentPath, item.FolderName)
+
+			now := time.Now()
+			folder := &model.Folder{
+				UserID:     userID,
+				ParentID:   parentID,
+				FolderName: item.FolderName,
+				FullPath:   fullPath,
+				IsPublic:   req.IsPublic,
+				CreateTime: now,
+				UpdateTime: now,
+			}
+
+			if ferr := txRepo.Create(folder); ferr != nil {
+				return ferr
+			}
+
+			created[item.TempKey] = folder.ID
+			results = append(results, BatchFolderResult{
+				TempKey:    item.TempKey,
+				ID:         folder.ID,
+				FolderName: item.FolderName,
+				Status:     "created",
+			})
+		}
+		return nil
+	})
+
+	if err != nil {
+		response.Error(c, response.CodeInternal, "批量创建文件夹失败: "+err.Error())
+		return
+	}
+
+	response.Success(c, BatchCreateFolderResp{Folders: results})
+}
+
+// ==================== 公开文件夹树 ====================
+
+// PublicFolderNode 公开文件夹树节点（含上传者昵称）
+type PublicFolderNode struct {
+	ID           int64               `json:"id"`
+	ParentID     int64               `json:"parentId"`
+	FolderName   string              `json:"folderName"`
+	UserID       int64               `json:"userId"`
+	UploaderName string              `json:"uploaderName"`
+	Children     []*PublicFolderNode `json:"children"`
+}
+
+// PublicTree 获取公开文件夹树（免登录）
+func (h *FolderHandler) PublicTree(c *gin.Context) {
+	// 解析可选的 parentId 查询参数，0 表示根目录
+	var parentID int64
+	if pid := c.Query("parentId"); pid != "" {
+		var parseErr error
+		parentID, parseErr = strconv.ParseInt(pid, 10, 64)
+		if parseErr != nil {
+			parentID = 0
+		}
+	}
+
+	folders, err := h.FolderRepo.FindPublicFolders(parentID)
+	if err != nil {
+		response.Error(c, response.CodeInternal, "获取公开文件夹失败")
+		return
+	}
+
+	// 收集唯一用户ID并批量获取用户昵称
+	userIDs := make(map[int64]bool)
+	for i := range folders {
+		userIDs[folders[i].UserID] = true
+	}
+
+	ids := make([]int64, 0, len(userIDs))
+	for uid := range userIDs {
+		ids = append(ids, uid)
+	}
+
+	userMap, _ := h.UserRepo.FindByIDs(ids)
+	userNameMap := make(map[int64]string, len(userMap))
+	for uid, u := range userMap {
+		userNameMap[uid] = u.Nickname
+	}
+
+	// 构建节点映射
+	nodeMap := make(map[int64]*PublicFolderNode, len(folders))
+	for i := range folders {
+		nodeMap[folders[i].ID] = &PublicFolderNode{
+			ID:           folders[i].ID,
+			ParentID:     folders[i].ParentID,
+			FolderName:   folders[i].FolderName,
+			UserID:       folders[i].UserID,
+			UploaderName: userNameMap[folders[i].UserID],
+			Children:     []*PublicFolderNode{},
+		}
+	}
+
+	// 构建树结构
+	var roots []*PublicFolderNode
 	for i := range folders {
 		node := nodeMap[folders[i].ID]
 		if node.ParentID == 0 {

@@ -32,6 +32,7 @@
     "@tarojs/webpack5-runner": "3.6.40",
     "@types/jest": "^30.0.0",
     "@types/react": "^18.2.0",
+    "@types/react-dom": "^19.2.3",
     "@types/webpack-env": "^1.18.0",
     "babel-preset-taro": "3.6.40",
     "browserslist": "^4.23.0",

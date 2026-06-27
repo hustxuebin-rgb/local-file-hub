@@ -11,6 +11,7 @@ import (
 	"local-file-hub/backend/internal/config"
 	"local-file-hub/backend/internal/discovery"
 	"local-file-hub/backend/internal/model"
+	"local-file-hub/backend/internal/repository"
 	"local-file-hub/backend/internal/router"
 	"local-file-hub/backend/internal/worker"
 
@@ -56,7 +57,8 @@ func main() {
 	(&worker.CleanupWorker{DB: db}).Start()
 
 	// 启动后台同步工作器
-	syncWorker := &worker.SyncWorker{DB: db}
+	operationLogRepo := &repository.OperationLogRepo{DB: db}
+	syncWorker := &worker.SyncWorker{DB: db, OperationLogRepo: operationLogRepo}
 	go syncWorker.Start()
 
 	lanIP := getLanIP()

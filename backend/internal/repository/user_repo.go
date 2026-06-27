@@ -29,6 +29,23 @@ func (r *UserRepo) FindByID(id int64) (*model.SysUser, error) {
 	return &user, nil
 }
 
+// FindByIDs 批量根据ID查找用户，返回 id → *SysUser 映射
+func (r *UserRepo) FindByIDs(ids []int64) (map[int64]*model.SysUser, error) {
+	if len(ids) == 0 {
+		return map[int64]*model.SysUser{}, nil
+	}
+	var users []model.SysUser
+	err := r.DB.Where("id IN ?", ids).Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64]*model.SysUser, len(users))
+	for i := range users {
+		result[users[i].ID] = &users[i]
+	}
+	return result, nil
+}
+
 // Create 创建用户
 func (r *UserRepo) Create(user *model.SysUser) error {
 	return r.DB.Create(user).Error

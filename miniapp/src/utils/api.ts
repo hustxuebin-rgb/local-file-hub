@@ -178,6 +178,19 @@ export function getStorageStat(): Promise<StorageStat> {
   return api.get<StorageStat>('/api/miniapp/storage_stat');
 }
 
+// ====== 公共文件夹 ======
+
+/**
+ * 获取公开文件夹列表
+ * @param parentId 父文件夹ID，不传或传 undefined 表示获取顶层文件夹
+ */
+export function listPublicFolders(parentId?: number): Promise<Folder[]> {
+  return api.get<Folder[]>('/api/folder/public', {
+    skipErrorToast: true,
+    params: parentId !== undefined ? { parentId } : undefined,
+  });
+}
+
 // ====== 公共文件 ======
 
 export interface PublicFile extends FileInfo {
@@ -185,6 +198,7 @@ export interface PublicFile extends FileInfo {
 }
 
 export interface PublicFileListParams {
+  folderId?: number;
   keyword?: string;
   fileType?: string;
   sortBy?: string;
@@ -217,10 +231,15 @@ export function addFavorite(data: { targetType: number; targetId: number }): Pro
 }
 
 export function removeFavorite(data: { targetType: number; targetId: number }): Promise<void> {
-  return api.delete<void>(`/api/favorite?targetType=${data.targetType}&targetId=${data.targetId}`);
+  return api.delete<void>('/api/favorite', data);
 }
 
-export function listFavorites(params?: { page?: number; pageSize?: number }): Promise<{ total: number; list: FavoriteItem[] }> {
+export function listFavorites(params?: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  targetType?: number;
+}): Promise<{ total: number; list: FavoriteItem[] }> {
   return api.get<{ total: number; list: FavoriteItem[] }>('/api/favorite/list', {
     skipErrorToast: true,
     params: params || undefined,
