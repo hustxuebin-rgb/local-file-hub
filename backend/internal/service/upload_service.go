@@ -340,20 +340,20 @@ func computeMD5(filePath string) (string, error) {
 }
 
 // detectFileType 根据扩展名检测文件类型
-// 1=文档, 2=图片, 3=视频, 4=音频, 5=其他
+// 1=图片, 2=视频, 3=音频, 4=文档, 5=其他（与数据库 file_type 定义一致）
 func detectFileType(ext string) int8 {
 	ext = strings.ToLower(ext)
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico":
-		return 2
+		return 1 // 图片
 	case ".mp4", ".avi", ".mov", ".wmv", ".flv", ".mkv", ".webm", ".m4v":
-		return 3
+		return 2 // 视频
 	case ".mp3", ".wav", ".aac", ".flac", ".ogg", ".wma", ".m4a":
-		return 4
+		return 3 // 音频
 	case ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf", ".txt", ".csv", ".md":
-		return 1
+		return 4 // 文档
 	default:
-		return 5
+		return 5 // 其他
 	}
 }
 

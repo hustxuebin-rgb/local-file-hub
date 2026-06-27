@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	"time"
 
 	"local-file-hub/backend/internal/model"
@@ -27,7 +28,7 @@ func (r *FileRepo) FindByID(id int64) (*model.FileInfo, error) {
 }
 
 // FindByUserAndFolder 查找用户指定目录下的文件（分页，不含已删除）
-func (r *FileRepo) FindByUserAndFolder(userID, folderID int64, visibility *int8, offset, limit int) ([]model.FileInfo, int64, error) {
+func (r *FileRepo) FindByUserAndFolder(userID, folderID int64, visibility *int8, keyword string, fileType *int8, sortBy string, sortOrder string, offset, limit int) ([]model.FileInfo, int64, error) {
 	var files []model.FileInfo
 	var total int64
 
@@ -37,11 +38,20 @@ func (r *FileRepo) FindByUserAndFolder(userID, folderID int64, visibility *int8,
 		query = query.Where("visibility = ?", *visibility)
 	}
 
+	if keyword != "" {
+		query = query.Where("file_name LIKE ?", "%"+keyword+"%")
+	}
+
+	if fileType != nil {
+		query = query.Where("file_type = ?", *fileType)
+	}
+
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	err := query.Order("create_time DESC").Offset(offset).Limit(limit).Find(&files).Error
+	orderClause := buildOrderClause(sortBy, sortOrder)
+	err := query.Order(orderClause).Offset(offset).Limit(limit).Find(&files).Error
 	return files, total, err
 }
 
@@ -104,10 +114,57 @@ func (r *FileRepo) HardDelete(id int64) error {
 	return r.DB.Delete(&model.FileInfo{}, id).Error
 }
 
+// FindPublicFiles 查询所有用户公开且未删除的文件（分页，支持过滤和排序）
+func (r *FileRepo) FindPublicFiles(keyword string, fileType *int8, sortBy string, sortOrder string, offset, limit int) ([]model.FileInfo, int64, error) {
+	var files []model.FileInfo
+	var total int64
+
+	query := r.DB.Model(&model.FileInfo{}).Where("visibility = 1 AND is_delete = 0")
+
+	if keyword != "" {
+		query = query.Where("file_name LIKE ?", "%"+keyword+"%")
+	}
+
+	if fileType != nil {
+		query = query.Where("file_type = ?", *fileType)
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	orderClause := buildOrderClause(sortBy, sortOrder)
+	err := query.Order(orderClause).Offset(offset).Limit(limit).Find(&files).Error
+	return files, total, err
+}
+
 // SumSizeByUser 统计用户未删除文件的总大小
 func (r *FileRepo) SumSizeByUser(userID int64) (int64, error) {
 	var total int64
 	err := r.DB.Model(&model.FileInfo{}).Where("user_id = ? AND is_delete = 0", userID).
 		Select("COALESCE(SUM(file_size), 0)").Scan(&total).Error
 	return total, err
+}
+
+// buildOrderClause 构建排序子句
+func buildOrderClause(sortBy, sortOrder string) string {
+	// 白名单校验，防止 SQL 注入
+	validSortBy := map[string]string{
+		"name":       "file_name",
+		"fileSize":   "file_size",
+		"fileType":   "file_type",
+		"createTime": "create_time",
+	}
+
+	col, ok := validSortBy[sortBy]
+	if !ok {
+		col = "create_time"
+	}
+
+	direction := "DESC"
+	if sortOrder == "asc" {
+		direction = "ASC"
+	}
+
+	return fmt.Sprintf("%s %s", col, direction)
 }

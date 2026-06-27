@@ -16,5 +16,25 @@ type StorageDisk struct {
 	UpdateTime    time.Time `gorm:"column:update_time;type:datetime;not null;autoUpdateTime" json:"updateTime"`
 }
 
+// MountInfo 系统挂载点信息
+type MountInfo struct {
+	MountPoint string `json:"mountPoint"`
+	Device     string `json:"device"`
+	FsType     string `json:"fsType"`
+}
+
+// DirEntry 目录条目
+type DirEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// DiskSimple 磁盘简要信息
+type DiskSimple struct {
+	ID       int64  `json:"id"`
+	DiskPath string `json:"diskPath"`
+	DiskType int8   `json:"diskType"`
+}
+
 // TableName 指定表名
 func (StorageDisk) TableName() string { return "storage_disk" }

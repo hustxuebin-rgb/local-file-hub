@@ -9,6 +9,7 @@ type SysUser struct {
 	Password     string    `gorm:"column:password;type:varchar(100);not null" json:"-"`
 	Nickname     string    `gorm:"column:nickname;type:varchar(50);not null" json:"nickname"`
 	Role         int8      `gorm:"column:role;type:tinyint;not null;default:2" json:"role"`
+	DiskID       *int64    `gorm:"column:disk_id;type:bigint;default:null" json:"diskId"`
 	StorageRoot  string    `gorm:"column:storage_root;type:varchar(255);not null;uniqueIndex" json:"storageRoot"`
 	StorageQuota int64     `gorm:"column:storage_quota;type:bigint;not null;default:107374182400" json:"storageQuota"`
 	UsedSize     int64     `gorm:"column:used_size;type:bigint;not null;default:0" json:"usedSize"`

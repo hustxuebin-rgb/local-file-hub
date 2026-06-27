@@ -185,10 +185,10 @@ func (s *StorageService) UploadFile(userID int64, srcPath, fileName string, fold
 	return file, nil
 }
 
-// ListFiles 列出用户指定目录下的文件（分页）
-func (s *StorageService) ListFiles(userID, folderID int64, visibility *int8, page, pageSize int) ([]model.FileInfo, int64, error) {
+// ListFiles 列出用户指定目录下的文件（分页，支持关键字/类型/排序过滤）
+func (s *StorageService) ListFiles(userID, folderID int64, visibility *int8, keyword string, fileType *int8, sortBy, sortOrder string, page, pageSize int) ([]model.FileInfo, int64, error) {
 	offset := (page - 1) * pageSize
-	return s.FileRepo.FindByUserAndFolder(userID, folderID, visibility, offset, pageSize)
+	return s.FileRepo.FindByUserAndFolder(userID, folderID, visibility, keyword, fileType, sortBy, sortOrder, offset, pageSize)
 }
 
 // GetFileInfo 获取文件信息
@@ -297,6 +297,12 @@ func (s *StorageService) HardDeleteFile(fileID, userID int64) error {
 	}
 
 	return s.FileRepo.HardDelete(fileID)
+}
+
+// ListPublicFiles 列出所有用户公开的文件（分页，支持过滤和排序）
+func (s *StorageService) ListPublicFiles(keyword string, fileType *int8, sortBy, sortOrder string, page, pageSize int) ([]model.FileInfo, int64, error) {
+	offset := (page - 1) * pageSize
+	return s.FileRepo.FindPublicFiles(keyword, fileType, sortBy, sortOrder, offset, pageSize)
 }
 
 // copyFile 复制文件

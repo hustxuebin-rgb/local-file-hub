@@ -231,7 +231,7 @@ func (s *ShareService) GetShareContents(shareID, userID int64) (*ShareContentsRe
 		resourceName = f.FolderName
 		folder = f
 		// 列出文件夹下所有未删除文件
-		files, _, err = s.FileRepo.FindByUserAndFolder(f.UserID, f.ID, nil, 0, 0)
+		files, _, err = s.FileRepo.FindByUserAndFolder(f.UserID, f.ID, nil, "", nil, "", "", 0, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -337,6 +337,85 @@ func (s *ShareService) toShareRecordResp(share *model.ShareRecord) (*ShareRecord
 	}
 
 	return resp, nil
+}
+
+// BatchShareItem 批量分享项
+type BatchShareItem struct {
+	ReceiveUserID int64 `json:"receiveUserId"`
+	ResourceID    int64 `json:"resourceId"`
+	ShareType     int8  `json:"shareType"`
+	SharePerm     int8  `json:"sharePerm"`
+	ExpireType    int8  `json:"expireType"`
+}
+
+// CreateBatchShare 批量创建分享（不检查重复分享）
+func (s *ShareService) CreateBatchShare(shareUserID int64, items []BatchShareItem) ([]ShareRecordResp, error) {
+	results := make([]ShareRecordResp, 0, len(items))
+
+	for _, item := range items {
+		resp, err := s.createShareInternal(shareUserID, item.ReceiveUserID, item.ResourceID, item.ShareType, item.SharePerm, item.ExpireType)
+		if err != nil {
+			continue // 跳过失败的项，收集成功的
+		}
+		results = append(results, *resp)
+	}
+
+	return results, nil
+}
+
+// createShareInternal 创建分享内部方法（不检查重复分享）
+func (s *ShareService) createShareInternal(shareUserID, receiveUserID, resourceID int64, shareType, sharePerm, expireType int8) (*ShareRecordResp, error) {
+	if shareUserID == receiveUserID {
+		return nil, ErrCannotShareToSelf
+	}
+
+	// 检查资源是否存在
+	if shareType == ShareTypeFile {
+		file, err := s.FileRepo.FindByID(resourceID)
+		if err != nil {
+			return nil, ErrResourceNotFound
+		}
+		if file.UserID != shareUserID {
+			return nil, ErrNoPermission
+		}
+		if file.IsDelete == 1 {
+			return nil, ErrResourceNotFound
+		}
+	} else if shareType == ShareTypeFolder {
+		folder, err := s.FolderRepo.FindByID(resourceID)
+		if err != nil {
+			return nil, ErrResourceNotFound
+		}
+		if folder.UserID != shareUserID {
+			return nil, ErrNoPermission
+		}
+	}
+
+	// 验证接收用户是否存在
+	_, err := s.UserRepo.FindByID(receiveUserID)
+	if err != nil {
+		return nil, ErrResourceNotFound
+	}
+
+	now := time.Now()
+	share := &model.ShareRecord{
+		ShareType:     shareType,
+		ResourceID:    resourceID,
+		ShareUserID:   shareUserID,
+		ReceiveUserID: receiveUserID,
+		SharePerm:     sharePerm,
+		ExpireType:    expireType,
+		ExpireTime:    calcExpireTime(expireType, now),
+		Status:        ShareStatusActive,
+		CreateTime:    now,
+		UpdateTime:    now,
+	}
+
+	if err := s.ShareRepo.Create(share); err != nil {
+		return nil, err
+	}
+
+	return s.toShareRecordResp(share)
 }
 
 // calcExpireTime 根据过期类型计算过期时间
