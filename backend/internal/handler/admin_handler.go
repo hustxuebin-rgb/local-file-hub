@@ -70,6 +70,7 @@ type AddUserReq struct {
 	Password     string `json:"password" binding:"required"`
 	Nickname     string `json:"nickname" binding:"required"`
 	Role         int8   `json:"role"`
+	DiskID       *int64 `json:"diskId"`
 	StorageQuota int64  `json:"storageQuota"`
 }
 
@@ -87,13 +88,31 @@ func (h *AdminHandler) AddUserHandler(c *gin.Context) {
 		return
 	}
 
+	// 生成 StorageRoot
+	timestamp := time.Now().UnixNano()
+	storageRoot := fmt.Sprintf("user_%s_%d", req.Username, timestamp)
+	if req.DiskID != nil && *req.DiskID > 0 {
+		var disk model.StorageDisk
+		if err := h.DB.First(&disk, *req.DiskID).Error; err != nil {
+			response.Error(c, response.CodeBadRequest, "指定的存储盘不存在")
+			return
+		}
+		storageRoot = fmt.Sprintf("%s/user_%s_%d", disk.DiskPath, req.Username, timestamp)
+	}
+
+	quotaMB := req.StorageQuota
+	if quotaMB <= 0 {
+		quotaMB = 100 * 1024 // 默认100GB = 102400 MB
+	}
+
 	user := &model.SysUser{
 		Username:     req.Username,
 		Password:     string(hashedPassword),
 		Nickname:     req.Nickname,
 		Role:         req.Role,
-		StorageQuota: req.StorageQuota * 1024 * 1024, // 前端传MB，转为bytes存储
-		StorageRoot:  fmt.Sprintf("user_%s_%d", req.Username, time.Now().UnixNano()),
+		DiskID:       req.DiskID,
+		StorageQuota: quotaMB * 1024 * 1024, // 前端传MB，转为bytes存储
+		StorageRoot:  storageRoot,
 	}
 
 	if err := h.UserRepo.Create(user); err != nil {
@@ -128,6 +147,7 @@ func (h *AdminHandler) UpdateUserHandler(c *gin.Context) {
 		StorageQuota *int64  `json:"storageQuota"`
 		Status       *int8   `json:"status"`
 		Role         *int8   `json:"role"`
+		DiskID       *int64  `json:"diskId"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, response.CodeBadRequest, "参数错误")
@@ -146,6 +166,16 @@ func (h *AdminHandler) UpdateUserHandler(c *gin.Context) {
 	}
 	if req.Role != nil {
 		updates["role"] = *req.Role
+	}
+	if req.DiskID != nil {
+		updates["disk_id"] = *req.DiskID
+		// 换盘时同步更新 storage_root
+		if *req.DiskID > 0 {
+			var disk model.StorageDisk
+			if err := h.DB.First(&disk, *req.DiskID).Error; err == nil {
+				updates["storage_root"] = disk.DiskPath + "/user_" + existing.Username + "_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+			}
+		}
 	}
 	if len(updates) == 0 {
 		response.Error(c, response.CodeBadRequest, "没有需要更新的字段")

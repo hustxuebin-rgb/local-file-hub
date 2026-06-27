@@ -19,17 +19,63 @@ func (h *LogHandler) OperateLogHandler(c *gin.Context) {
 	page := c.DefaultQuery("page", "1")
 	size := c.DefaultQuery("size", "20")
 
-	offset := 0
 	limit := 20
+	if s, e := strconv.Atoi(size); e == nil && s > 0 && s <= 100 {
+		limit = s
+	}
+
+	offset := 0
 	if p, e := strconv.Atoi(page); e == nil && p > 0 {
 		offset = (p - 1) * limit
 	}
-	_ = size
+
+	operType := c.Query("operType")
 
 	var logs []model.SysOperationLog
 	var total int64
-	h.DB.Model(&model.SysOperationLog{}).Where("user_id = ?", userID).Count(&total)
-	h.DB.Where("user_id = ?", userID).Order("create_time DESC").Offset(offset).Limit(limit).Find(&logs)
+
+	query := h.DB.Model(&model.SysOperationLog{}).Where("user_id = ?", userID)
+	if operType != "" && operType != "0" {
+		if ot, e := strconv.ParseInt(operType, 10, 8); e == nil {
+			query = query.Where("oper_type = ?", int8(ot))
+		}
+	}
+
+	query.Count(&total)
+	query.Order("create_time DESC").Offset(offset).Limit(limit).Find(&logs)
+	response.Success(c, map[string]interface{}{"total": total, "list": logs})
+}
+
+// MyOperateLogHandler 普通用户查自己日志（无需admin权限）
+func (h *LogHandler) MyOperateLogHandler(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	page := c.DefaultQuery("page", "1")
+	size := c.DefaultQuery("size", "20")
+
+	limit := 20
+	if s, e := strconv.Atoi(size); e == nil && s > 0 && s <= 100 {
+		limit = s
+	}
+
+	offset := 0
+	if p, e := strconv.Atoi(page); e == nil && p > 0 {
+		offset = (p - 1) * limit
+	}
+
+	operType := c.Query("operType")
+
+	var logs []model.SysOperationLog
+	var total int64
+
+	query := h.DB.Model(&model.SysOperationLog{}).Where("user_id = ?", userID)
+	if operType != "" && operType != "0" {
+		if ot, e := strconv.ParseInt(operType, 10, 8); e == nil {
+			query = query.Where("oper_type = ?", int8(ot))
+		}
+	}
+
+	query.Count(&total)
+	query.Order("create_time DESC").Offset(offset).Limit(limit).Find(&logs)
 	response.Success(c, map[string]interface{}{"total": total, "list": logs})
 }
 

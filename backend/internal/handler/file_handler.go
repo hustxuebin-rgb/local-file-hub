@@ -69,18 +69,19 @@ type RecycleDeleteReq struct {
 
 // FileInfoResp 文件信息响应
 type FileInfoResp struct {
-	ID         int64  `json:"id"`
-	UserID     int64  `json:"userId"`
-	FolderID   int64  `json:"folderId"`
-	FileName   string `json:"fileName"`
-	FileSuffix string `json:"fileSuffix"`
-	FileType   int8   `json:"fileType"`
-	FileSize   int64  `json:"fileSize"`
-	MimeType   string `json:"mimeType"`
-	MD5        string `json:"md5"`
-	FullPath   string `json:"fullPath"`
-	IsDelete   int8   `json:"isDelete"`
-	CreateTime string `json:"createTime"`
+	ID           int64  `json:"id"`
+	UserID       int64  `json:"userId"`
+	FolderID     int64  `json:"folderId"`
+	FileName     string `json:"fileName"`
+	FileSuffix   string `json:"fileSuffix"`
+	FileType     int8   `json:"fileType"`
+	FileSize     int64  `json:"fileSize"`
+	MimeType     string `json:"mimeType"`
+	MD5          string `json:"md5"`
+	FullPath     string `json:"fullPath"`
+	IsDelete     int8   `json:"isDelete"`
+	CreateTime   string `json:"createTime"`
+	UploaderName string `json:"uploaderName,omitempty"`
 }
 
 // ListResp 文件列表响应
@@ -268,7 +269,20 @@ func (h *FileHandler) List(c *gin.Context) {
 		}
 	}
 
-	files, total, err := h.StorageService.ListFiles(userID, folderID, visibility, page, pageSize)
+	// 解析新增查询参数
+	keyword := c.Query("keyword")
+	var fileType *int8
+	if ft := c.Query("fileType"); ft != "" {
+		v, parseErr := strconv.ParseInt(ft, 10, 8)
+		if parseErr == nil {
+			val := int8(v)
+			fileType = &val
+		}
+	}
+	sortBy := c.DefaultQuery("sortBy", "createTime")
+	sortOrder := c.DefaultQuery("sortOrder", "desc")
+
+	files, total, err := h.StorageService.ListFiles(userID, folderID, visibility, keyword, fileType, sortBy, sortOrder, page, pageSize)
 	if err != nil {
 		response.Error(c, response.CodeInternal, "获取文件列表失败")
 		return
@@ -277,6 +291,48 @@ func (h *FileHandler) List(c *gin.Context) {
 	list := make([]FileInfoResp, 0, len(files))
 	for i := range files {
 		list = append(list, toFileInfoResp(&files[i]))
+	}
+
+	response.Success(c, ListResp{Total: total, List: list})
+}
+
+// PublicList 公开文件列表（无需登录即可查看）
+func (h *FileHandler) PublicList(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	keyword := c.Query("keyword")
+	var fileType *int8
+	if ft := c.Query("fileType"); ft != "" {
+		v, parseErr := strconv.ParseInt(ft, 10, 8)
+		if parseErr == nil {
+			val := int8(v)
+			fileType = &val
+		}
+	}
+	sortBy := c.DefaultQuery("sortBy", "createTime")
+	sortOrder := c.DefaultQuery("sortOrder", "desc")
+
+	files, total, err := h.StorageService.ListPublicFiles(keyword, fileType, sortBy, sortOrder, page, pageSize)
+	if err != nil {
+		response.Error(c, response.CodeInternal, "获取公开文件列表失败")
+		return
+	}
+
+	list := make([]FileInfoResp, 0, len(files))
+	for i := range files {
+		resp := toFileInfoResp(&files[i])
+		// 填充上传者昵称
+		if uploader, uerr := h.UserRepo.FindByID(files[i].UserID); uerr == nil {
+			resp.UploaderName = uploader.Nickname
+		}
+		list = append(list, resp)
 	}
 
 	response.Success(c, ListResp{Total: total, List: list})

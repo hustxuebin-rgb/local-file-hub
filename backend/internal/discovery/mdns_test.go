@@ -24,14 +24,14 @@ func TestNewMDNSService(t *testing.T) {
 			host:    "test-host",
 			port:    3000,
 			lanIP:   "not-an-ip",
-			wantErr: false, // NewMDNSService 不校验 IP 格式，nil IP 也可接受
+			wantErr: true, // v1.0.7 校验 IP 格式，无效 IP 返回 error
 		},
 		{
 			name:    "zero port",
 			host:    "zero-port",
 			port:    0,
 			lanIP:   "10.0.0.1",
-			wantErr: false,
+			wantErr: true, // v1.0.7 校验端口，0 端口返回 error
 		},
 	}
 
@@ -46,8 +46,9 @@ func TestNewMDNSService(t *testing.T) {
 				t.Error("newMDNSService() returned nil service without error")
 			}
 			if svc != nil {
-				if svc.Host != tt.host+"." {
-					t.Errorf("expected host suffix %q, got %q", tt.host+".", svc.Host)
+				// v1.0.7: Host 字段已重命名为 Instance（映射 NewMDNSService 的第一个参数）
+				if svc.Instance != tt.host {
+					t.Errorf("expected Instance %q, got %q", tt.host, svc.Instance)
 				}
 			}
 		})

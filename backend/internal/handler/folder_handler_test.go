@@ -395,5 +395,3 @@ func TestCreateFolder_MissingFolderName(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, 400, resp.Code)
 }
-
-

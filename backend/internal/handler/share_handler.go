@@ -136,6 +136,55 @@ func (h *ShareHandler) CancelHandler(c *gin.Context) {
 	response.SuccessWithMsg(c, "分享已取消", nil)
 }
 
+// BatchCreateShareReq 批量创建分享请求
+type BatchCreateShareReq struct {
+	Items []BatchShareItemReq `json:"items" binding:"required"`
+}
+
+// BatchShareItemReq 批量分享项请求
+type BatchShareItemReq struct {
+	ReceiveUserID int64 `json:"receiveUserId" binding:"required"`
+	ResourceID    int64 `json:"resourceId" binding:"required"`
+	ShareType     int8  `json:"shareType" binding:"required"`
+	SharePerm     int8  `json:"sharePerm" binding:"required"`
+	ExpireType    int8  `json:"expireType" binding:"required"`
+}
+
+// BatchCreateHandler 批量创建分享
+func (h *ShareHandler) BatchCreateHandler(c *gin.Context) {
+	var req BatchCreateShareReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	if len(req.Items) == 0 {
+		response.Error(c, response.CodeBadRequest, "分享项不能为空")
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	items := make([]service.BatchShareItem, len(req.Items))
+	for i, item := range req.Items {
+		items[i] = service.BatchShareItem{
+			ReceiveUserID: item.ReceiveUserID,
+			ResourceID:    item.ResourceID,
+			ShareType:     item.ShareType,
+			SharePerm:     item.SharePerm,
+			ExpireType:    item.ExpireType,
+		}
+	}
+
+	results, err := h.ShareService.CreateBatchShare(userID, items)
+	if err != nil {
+		response.Error(c, response.CodeInternal, "批量创建分享失败")
+		return
+	}
+
+	response.Success(c, results)
+}
+
 // handleShareError 统一处理分享相关错误
 func handleShareError(c *gin.Context, err error) {
 	switch {

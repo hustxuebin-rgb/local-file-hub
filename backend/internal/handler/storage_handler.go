@@ -3,7 +3,12 @@ package handler
 import (
 	"log"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"local-file-hub/backend/internal/model"
@@ -249,4 +254,201 @@ func (h *StorageHandler) DeleteDiskHandler(c *gin.Context) {
 	}
 
 	response.SuccessWithMsg(c, "磁盘已删除", nil)
+}
+
+// ScanMountsHandler 扫描系统挂载点
+func (h *StorageHandler) ScanMountsHandler(c *gin.Context) {
+	cmd := exec.Command("mount")
+	output, err := cmd.Output()
+	if err != nil {
+		// Linux 回退：读取 /proc/mounts
+		data, readErr := os.ReadFile("/proc/mounts")
+		if readErr != nil {
+			response.Error(c, response.CodeInternal, "执行 mount 命令失败: "+err.Error())
+			return
+		}
+		output = data
+	}
+
+	// 跨平台正则：兼容 macOS 和 Linux mount 输出格式
+	// macOS: device on /path (fstype, options)
+	// Linux: device on /path type fstype (options)
+	var re *regexp.Regexp
+	if runtime.GOOS == "darwin" {
+		re = regexp.MustCompile(`(\S+)\s+on\s+(\S+)\s+\((\w+)`)
+	} else {
+		re = regexp.MustCompile(`(\S+)\s+on\s+(\S+)\s+type\s+(\w+)`)
+	}
+
+	lines := strings.Split(string(output), "\n")
+
+	var mounts []model.MountInfo
+	for _, line := range lines {
+		matches := re.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+		device := matches[1]
+		mountPoint := matches[2]
+		fsType := matches[3]
+
+		// 过滤虚拟挂载点
+		if strings.HasPrefix(mountPoint, "/dev") ||
+			strings.HasPrefix(mountPoint, "/proc") ||
+			strings.HasPrefix(mountPoint, "/sys") ||
+			strings.HasPrefix(mountPoint, "/run") ||
+			strings.HasPrefix(mountPoint, "/snap") ||
+			strings.Contains(device, "devfs") ||
+			strings.Contains(device, "map ") ||
+			fsType == "tmpfs" ||
+			fsType == "cgroup" ||
+			fsType == "overlay" {
+			continue
+		}
+
+		mounts = append(mounts, model.MountInfo{
+			Device:     device,
+			MountPoint: mountPoint,
+			FsType:     fsType,
+		})
+	}
+
+	response.Success(c, mounts)
+}
+
+// BrowseDirsHandler 浏览目录（只返回子目录）
+func (h *StorageHandler) BrowseDirsHandler(c *gin.Context) {
+	path := c.Query("path")
+	if path == "" {
+		response.Error(c, response.CodeBadRequest, "路径不能为空")
+		return
+	}
+	if strings.Contains(path, "..") {
+		response.Error(c, response.CodeBadRequest, "路径包含非法字符")
+		return
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		response.Error(c, response.CodeInternal, "读取目录失败: "+err.Error())
+		return
+	}
+
+	var dirs []model.DirEntry
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		dirs = append(dirs, model.DirEntry{
+			Name: name,
+			Path: filepath.Join(path, name),
+		})
+	}
+
+	response.Success(c, dirs)
+}
+
+// CreateDirReq 创建目录请求体
+type CreateDirReq struct {
+	ParentPath string `json:"parentPath"`
+	DirName    string `json:"dirName"`
+}
+
+// CreateDirHandler 创建目录
+func (h *StorageHandler) CreateDirHandler(c *gin.Context) {
+	var req CreateDirReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误")
+		return
+	}
+
+	if strings.Contains(req.ParentPath, "..") {
+		response.Error(c, response.CodeBadRequest, "路径包含非法字符")
+		return
+	}
+
+	if req.DirName == "" {
+		response.Error(c, response.CodeBadRequest, "目录名不能为空")
+		return
+	}
+	if req.DirName == ".." ||
+		strings.Contains(req.DirName, "../") ||
+		strings.Contains(req.DirName, "/") ||
+		strings.Contains(req.DirName, "\"") {
+		response.Error(c, response.CodeBadRequest, "目录名包含非法字符")
+		return
+	}
+
+	targetPath := filepath.Join(req.ParentPath, req.DirName)
+	if err := os.MkdirAll(targetPath, 0755); err != nil {
+		response.Error(c, response.CodeInternal, "创建目录失败: "+err.Error())
+		return
+	}
+
+	response.SuccessWithMsg(c, "目录创建成功", nil)
+}
+
+// DeleteDirReq 删除目录请求体
+type DeleteDirReq struct {
+	Path string `json:"path"`
+}
+
+// DeleteDirHandler 删除空目录
+func (h *StorageHandler) DeleteDirHandler(c *gin.Context) {
+	var req DeleteDirReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误")
+		return
+	}
+
+	if req.Path == "" {
+		response.Error(c, response.CodeBadRequest, "路径不能为空")
+		return
+	}
+	if strings.Contains(req.Path, "..") {
+		response.Error(c, response.CodeBadRequest, "路径包含非法字符")
+		return
+	}
+
+	// 检查目录是否为空
+	entries, err := os.ReadDir(req.Path)
+	if err != nil {
+		response.Error(c, response.CodeInternal, "读取目录失败: "+err.Error())
+		return
+	}
+	if len(entries) > 0 {
+		response.Error(c, response.CodeBadRequest, "目录非空，无法删除")
+		return
+	}
+
+	if err := os.Remove(req.Path); err != nil {
+		response.Error(c, response.CodeInternal, "删除目录失败: "+err.Error())
+		return
+	}
+
+	response.SuccessWithMsg(c, "目录已删除", nil)
+}
+
+// DiskListSimpleHandler 获取启用的磁盘简要列表
+func (h *StorageHandler) DiskListSimpleHandler(c *gin.Context) {
+	var disks []model.StorageDisk
+	if err := h.DB.Select("id, disk_path, disk_type").Where("status = ?", 1).Find(&disks).Error; err != nil {
+		response.Error(c, response.CodeInternal, "获取磁盘列表失败")
+		return
+	}
+
+	var result []model.DiskSimple
+	for _, d := range disks {
+		result = append(result, model.DiskSimple{
+			ID:       d.ID,
+			DiskPath: d.DiskPath,
+			DiskType: d.DiskType,
+		})
+	}
+
+	response.Success(c, result)
 }

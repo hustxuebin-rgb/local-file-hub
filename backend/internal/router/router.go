@@ -25,6 +25,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	uploadTaskRepo := &repository.UploadTaskRepo{DB: db}
 	operationLogRepo := &repository.OperationLogRepo{DB: db}
 	shareRepo := &repository.ShareRepo{DB: db}
+	favoriteRepo := &repository.FavoriteRepo{DB: db}
 
 	authService := &service.AuthService{
 		UserRepo:   userRepo,
@@ -72,6 +73,15 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	}
 
 	shareHandler := &handler.ShareHandler{ShareService: shareService}
+
+	favoriteService := &service.FavoriteService{
+		FavoriteRepo: favoriteRepo,
+		FileRepo:     fileRepo,
+		FolderRepo:   folderRepo,
+		ShareRepo:    shareRepo,
+		UserRepo:     userRepo,
+	}
+	favoriteHandler := &handler.FavoriteHandler{FavoriteService: favoriteService}
 
 	storageHandler := &handler.StorageHandler{
 		StorageService: storageService,
@@ -123,6 +133,11 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	storageGroup.Use(middleware.AdminRequired())
 	{
 		storageGroup.GET("/disk_info", storageHandler.DiskInfoHandler)
+		storageGroup.GET("/scan_mounts", storageHandler.ScanMountsHandler)
+		storageGroup.GET("/browse_dirs", storageHandler.BrowseDirsHandler)
+		storageGroup.POST("/dir", storageHandler.CreateDirHandler)
+		storageGroup.DELETE("/dir", storageHandler.DeleteDirHandler)
+		storageGroup.GET("/disk_simple", storageHandler.DiskListSimpleHandler)
 		storageGroup.GET("/sync_task", storageHandler.SyncTaskHandler)
 		storageGroup.PUT("/sync_task", storageHandler.UpdateSyncTaskHandler)
 		storageGroup.POST("/sync/manual", storageHandler.ManualSyncHandler)
@@ -180,6 +195,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	shareGroup := r.Group("/api/share")
 	{
 		shareGroup.POST("", shareHandler.CreateHandler)
+		shareGroup.POST("/batch", shareHandler.BatchCreateHandler)
 		shareGroup.GET("/my", shareHandler.MySharesHandler)
 		shareGroup.GET("/received", shareHandler.ReceivedSharesHandler)
 		shareGroup.GET("/:id/contents", shareHandler.ContentsHandler)
@@ -207,6 +223,20 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		logGroup.GET("/warn", logHandler.WarnLogHandler)
 		logGroup.POST("/warn/read", logHandler.ReadWarnHandler)
 	}
+
+	// 普通用户日志（无需admin权限）
+	r.GET("/api/log/my", logHandler.MyOperateLogHandler)
+
+	// 收藏管理
+	favoriteGroup := r.Group("/api/favorite")
+	{
+		favoriteGroup.POST("", favoriteHandler.AddFavorite)
+		favoriteGroup.DELETE("", favoriteHandler.RemoveFavorite)
+		favoriteGroup.GET("/list", favoriteHandler.ListFavorites)
+	}
+
+	// 公开文件（无需admin权限）
+	r.GET("/api/file/public", fileHandler.PublicList)
 
 	// 媒体
 	mediaGroup := r.Group("/api/media")
