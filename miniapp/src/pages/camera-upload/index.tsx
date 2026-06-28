@@ -2,14 +2,26 @@ import { View, Text, Image } from '@tarojs/components';
 import { useDidShow } from '@tarojs/taro';
 import { useState, useCallback } from 'react';
 import Taro from '@tarojs/taro';
-import { Button } from '@nutui/nutui-react-taro';
+import { Button, Progress } from '@nutui/nutui-react-taro';
+import { getApiBaseUrl, STORAGE_KEYS } from '../../utils/config';
+import { chunkedUpload } from '../../utils/upload';
 import './index.scss';
+
+const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024; // 10MB
 
 interface CameraUploadProps {}
 
+interface MediaItem {
+  path: string;
+  size: number;
+  type: string;
+}
+
 function CameraUploadPage(_props: CameraUploadProps): JSX.Element {
-  const [media, setMedia] = useState<{ path: string; size: number; type: string } | null>(null);
+  const [media, setMedia] = useState<MediaItem | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [chunkInfo, setChunkInfo] = useState('');
 
   const handleTakePhoto = useCallback(async () => {
     try {
@@ -35,17 +47,42 @@ function CameraUploadPage(_props: CameraUploadProps): JSX.Element {
       return;
     }
     setUploading(true);
+    setProgress(0);
+    setChunkInfo('');
+
+    const token: string = Taro.getStorageSync(STORAGE_KEYS.TOKEN);
+    const fileName = media.path.split('/').pop() || 'photo';
+
     try {
-      await Taro.uploadFile({
-        url: 'http://localhost:8080/api/miniapp/camera_upload',
-        filePath: media.path,
-        name: 'file',
-        header: {
-          Authorization: `Bearer ${Taro.getStorageSync('token')}`,
-        },
-      });
+      if (media.size >= LARGE_FILE_THRESHOLD) {
+        // 大文件：分片上传
+        await chunkedUpload({
+          filePath: media.path,
+          fileName,
+          fileSize: media.size,
+          token,
+          onProgress: (percent: number, currentChunk: number, totalChunks: number) => {
+            setProgress(percent);
+            setChunkInfo(`上传中：第 ${currentChunk}/${totalChunks} 片`);
+          },
+        });
+      } else {
+        // 小文件：保持现有简单上传
+        await Taro.uploadFile({
+          url: `${getApiBaseUrl()}/api/miniapp/camera_upload`,
+          filePath: media.path,
+          name: 'file',
+          header: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        setProgress(100);
+      }
+
       Taro.showToast({ title: '上传成功', icon: 'success' });
       setMedia(null);
+      setProgress(0);
+      setChunkInfo('');
     } catch {
       Taro.showToast({ title: '上传失败', icon: 'none' });
     } finally {
@@ -83,6 +120,18 @@ function CameraUploadPage(_props: CameraUploadProps): JSX.Element {
               <View className="camera-upload-page__preview-video">
                 <Text>🎬 视频</Text>
               </View>
+            )}
+          </View>
+        )}
+
+        {uploading && (
+          <View className="camera-upload-page__progress">
+            <Progress percent={progress} />
+            <Text className="camera-upload-page__progress-text">
+              上传中 {Math.round(progress)}%
+            </Text>
+            {chunkInfo && (
+              <Text className="camera-upload-page__chunk-info">{chunkInfo}</Text>
             )}
           </View>
         )}

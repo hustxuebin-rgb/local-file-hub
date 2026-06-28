@@ -10,13 +10,14 @@ import {
   Select,
   Popconfirm,
   Tag,
+  List,
   message,
 } from 'antd';
 import type { TableProps } from 'antd';
-import { ShareAltOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
-import { getMyShares, createShare, cancelShare, searchUsers } from '@/api';
+import { ShareAltOutlined, DeleteOutlined, ReloadOutlined, EyeOutlined } from '@ant-design/icons';
+import { getMyShares, createShare, cancelShare, searchUsers, getShareViewers } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
-import type { ShareRecord, User } from '@/types';
+import type { ShareRecord, ShareViewer, User } from '@/types';
 
 function ShareMyPage(): React.ReactNode {
   const [data, setData] = useState<ShareRecord[]>([]);
@@ -28,6 +29,9 @@ function ShareMyPage(): React.ReactNode {
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
   const [userOptions, setUserOptions] = useState<{ value: number; label: string }[]>([]);
+  const [viewerModalOpen, setViewerModalOpen] = useState(false);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewers, setViewers] = useState<ShareViewer[]>([]);
 
   const fetchData = async (p = page) => {
     setLoading(true);
@@ -91,16 +95,35 @@ function ShareMyPage(): React.ReactNode {
     }
   };
 
+  const handleViewViewers = async (shareId: number) => {
+    setViewerModalOpen(true);
+    setViewerLoading(true);
+    setViewers([]);
+    try {
+      const res = await getShareViewers(shareId);
+      if (res.data) {
+        setViewers(res.data.list);
+      }
+    } catch (err: unknown) {
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    } finally {
+      setViewerLoading(false);
+    }
+  };
+
   const shareTypeMap: Record<number, string> = { 1: '文件', 2: '文件夹' };
   const sharePermMap: Record<number, string> = { 1: '只读', 2: '可上传' };
-  const expireTypeMap: Record<number, string> = { 1: '1天', 2: '7天', 3: '30天', 4: '永久' };
+  const expireTypeMap: Record<number, string> = { 1: '永久', 2: '1天', 3: '7天', 4: '30天' };
   const statusMap: Record<number, { color: string; text: string }> = {
-    0: { color: 'processing', text: '有效' },
-    1: { color: 'default', text: '已取消' },
+    0: { color: 'default', text: '已取消' },
+    1: { color: 'processing', text: '有效' },
     2: { color: 'error', text: '已过期' },
   };
 
   const columns: TableProps<ShareRecord>['columns'] = [
+    { title: '分享内容', dataIndex: 'resourceName', key: 'resourceName', render: (n: string) => n || '-' },
+    { title: '接收者', dataIndex: 'receiveUserName', key: 'receiveUserName', render: (n: string) => n || '-' },
     { title: '分享类型', dataIndex: 'shareType', key: 'shareType', render: (t: number) => shareTypeMap[t] ?? '未知' },
     { title: '权限', dataIndex: 'sharePerm', key: 'sharePerm', render: (p: number) => sharePermMap[p] ?? '未知' },
     { title: '有效期', dataIndex: 'expireType', key: 'expireType', render: (e: number) => expireTypeMap[e] ?? '未知' },
@@ -115,10 +138,24 @@ function ShareMyPage(): React.ReactNode {
     },
     { title: '创建时间', dataIndex: 'createTime', key: 'createTime' },
     {
+      title: '查看记录',
+      key: 'viewers',
+      render: (_: unknown, record: ShareRecord) => (
+        <Button
+          type="link"
+          size="small"
+          icon={<EyeOutlined />}
+          onClick={() => handleViewViewers(record.id)}
+        >
+          查看
+        </Button>
+      ),
+    },
+    {
       title: '操作',
       key: 'action',
       render: (_: unknown, record: ShareRecord) =>
-        record.status === 0 ? (
+        record.status === 1 ? (
           <Popconfirm
             title="确认取消此分享？"
             description="取消后其他用户将无法访问"
@@ -204,14 +241,41 @@ function ShareMyPage(): React.ReactNode {
           <Form.Item name="expireType" label="有效期" rules={[{ required: true }]}>
             <Select
               options={[
-                { value: 1, label: '1天' },
-                { value: 2, label: '7天' },
-                { value: 3, label: '30天' },
-                { value: 4, label: '永久' },
+                { value: 2, label: '1天' },
+                { value: 3, label: '7天' },
+                { value: 4, label: '30天' },
+                { value: 1, label: '永久' },
               ]}
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="查看记录"
+        open={viewerModalOpen}
+        onCancel={() => {
+          setViewerModalOpen(false);
+          setViewers([]);
+        }}
+        footer={null}
+        loading={viewerLoading}
+      >
+        {viewers.length > 0 ? (
+          <List
+            dataSource={viewers}
+            renderItem={(v: ShareViewer) => (
+              <List.Item>
+                <List.Item.Meta
+                  title={v.userName}
+                  description={v.viewTime}
+                />
+              </List.Item>
+            )}
+          />
+        ) : (
+          !viewerLoading && <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>暂无查看记录</div>
+        )}
       </Modal>
     </Card>
   );

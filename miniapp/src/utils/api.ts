@@ -289,6 +289,28 @@ export function searchUsers(keyword: string): Promise<SearchUser[]> {
   return api.get<SearchUser[]>('/api/user/search', { params: { keyword } });
 }
 
+// ====== 任务中心 ======
+
+export interface TaskItem {
+  taskId: string;
+  fileName: string;
+  totalSize: number;
+  finishedSize: number;
+  status: number; // 0=pending, 1=processing, 2=paused, 3=completed, 4=failed, 5=cancelled
+  taskType: 'upload' | 'download';
+  createTime: string;
+  updateTime: string;
+}
+
+export interface TasksListResp {
+  uploadTasks: TaskItem[];
+  downloadTasks: TaskItem[];
+}
+
+export function getTasksList(): Promise<TasksListResp> {
+  return api.get<TasksListResp>('/api/file/tasks', { skipErrorToast: true });
+}
+
 // ====== Server 连接 ======
 
 export interface ServerInfo {

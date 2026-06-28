@@ -12,14 +12,15 @@ import (
 
 // FavoriteResp 收藏列表响应结构
 type FavoriteResp struct {
-	ID          int64     `json:"id"`
-	TargetType  int8      `json:"targetType"`
-	TargetID    int64     `json:"targetId"`
-	TargetName  string    `json:"targetName"`
-	TargetSize  int64     `json:"targetSize"`
-	TargetType2 int8      `json:"targetType2"`
-	OwnerName   string    `json:"ownerName"`
-	CreateTime  time.Time `json:"createTime"`
+	ID             int64     `json:"id"`
+	TargetType     int8      `json:"targetType"`
+	TargetID       int64     `json:"targetId"`
+	TargetName     string    `json:"targetName"`
+	TargetSize     int64     `json:"targetSize"`
+	TargetType2    int8      `json:"targetType2"`
+	OwnerName      string    `json:"ownerName"`
+	FolderIsPublic *int8     `json:"folderIsPublic"`
+	CreateTime     time.Time `json:"createTime"`
 }
 
 var (
@@ -155,6 +156,7 @@ func (s *FavoriteService) fillTargetInfo(resp *FavoriteResp, targetType int8, ta
 		if err == nil {
 			resp.TargetName = folder.FolderName
 			resp.TargetSize = 0
+			resp.FolderIsPublic = folder.IsPublic
 			owner, oerr := s.UserRepo.FindByID(folder.UserID)
 			if oerr == nil {
 				resp.OwnerName = owner.Nickname

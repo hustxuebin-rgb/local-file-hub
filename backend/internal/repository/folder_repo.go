@@ -85,13 +85,29 @@ func (r *FolderRepo) CountByUser(userID int64) (int64, error) {
 	return count, err
 }
 
-// FindPublicFolders 查找公开文件夹（is_public=1），支持按 parentID 过滤
-// parentID > 0 时过滤指定父目录，parentID = 0 时返回根目录（parent_id=0）
+// FindPublicFolders 查找公开文件夹，支持按 parentID 过滤
+// 只返回通过上传流程创建的文件夹（task_id 非空），且其关联的 upload_task.visibility = 1
+// 手动创建的文件夹（task_id IS NULL）不会出现在公共空间
+// parentID > 0 时过滤指定父目录，parentID = 0 时不过滤（返回所有级别）
 func (r *FolderRepo) FindPublicFolders(parentID int64) ([]model.Folder, error) {
 	var folders []model.Folder
-	err := r.DB.Where("is_public = ? AND parent_id = ?", 1, parentID).
-		Order("sort ASC, id ASC").Find(&folders).Error
+	query := r.DB.
+		Joins("INNER JOIN upload_task ON folder.task_id = upload_task.task_id").
+		Where("upload_task.visibility = 1 AND folder.is_public = 1")
+	if parentID > 0 {
+		query = query.Where("folder.parent_id = ?", parentID)
+	}
+	err := query.
+		Order("folder.sort ASC, folder.id ASC").
+		Find(&folders).Error
 	return folders, err
+}
+
+// UpdateVisibility 更新文件夹可见性（确保数据隔离）
+func (r *FolderRepo) UpdateVisibility(userID, folderID int64, visibility int8) error {
+	return r.DB.Model(&model.Folder{}).
+		Where("user_id = ? AND id = ?", userID, folderID).
+		Update("is_public", visibility).Error
 }
 
 // WithTx 返回绑定到事务的新 FolderRepo

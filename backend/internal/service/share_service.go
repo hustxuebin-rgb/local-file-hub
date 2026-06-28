@@ -36,12 +36,19 @@ const (
 	ShareStatusInactive int8 = 0
 )
 
+// 分享查看操作类型常量（与 handler.OperTypeShareView 对齐）
+var (
+	operTypeShareView = int8(11)
+	resourceTypeShare = int8(3) // 资源类型：分享
+)
+
 // ShareService 分享服务
 type ShareService struct {
-	ShareRepo  *repository.ShareRepo
-	FileRepo   *repository.FileRepo
-	FolderRepo *repository.FolderRepo
-	UserRepo   *repository.UserRepo
+	ShareRepo        *repository.ShareRepo
+	FileRepo         *repository.FileRepo
+	FolderRepo       *repository.FolderRepo
+	UserRepo         *repository.UserRepo
+	OperationLogRepo *repository.OperationLogRepo
 }
 
 // ShareRecordResp 分享记录响应
@@ -207,6 +214,9 @@ func (s *ShareService) GetShareContents(shareID, userID int64) (*ShareContentsRe
 	if share.ExpireTime != nil && share.ExpireTime.Before(time.Now()) {
 		return nil, ErrShareExpired
 	}
+
+	// 记录查看日志（异步、静默失败不影响主流程）
+	go s.logShareView(shareID, userID)
 
 	var resourceName string
 	var file *model.FileInfo
@@ -416,6 +426,57 @@ func (s *ShareService) createShareInternal(shareUserID, receiveUserID, resourceI
 	}
 
 	return s.toShareRecordResp(share)
+}
+
+// logShareView 异步记录分享查看操作
+func (s *ShareService) logShareView(shareID, userID int64) {
+	if s.OperationLogRepo == nil {
+		return
+	}
+	now := time.Now()
+	logEntry := &model.SysOperationLog{
+		UserID:       &userID,
+		OperType:     operTypeShareView,
+		ResourceType: &resourceTypeShare,
+		ResourceID:   &shareID,
+		OperDesc:     "查看分享内容",
+		CreateTime:   now,
+	}
+	_ = s.OperationLogRepo.Create(logEntry)
+}
+
+// ShareViewer 分享查看者信息
+type ShareViewer struct {
+	UserID   int64     `json:"userId"`
+	UserName string    `json:"userName"`
+	ViewTime time.Time `json:"viewTime"`
+}
+
+// GetShareViewers 获取分享的查看者列表（去重，按最近查看时间排序）
+func (s *ShareService) GetShareViewers(shareID, userID int64) ([]ShareViewer, error) {
+	// 验证分享存在且用户有权限
+	share, err := s.ShareRepo.FindByID(shareID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrShareNotFound
+		}
+		return nil, err
+	}
+	if share.ShareUserID != userID {
+		return nil, ErrNoPermission
+	}
+
+	// 查询去重的查看者
+	var viewers []ShareViewer
+	err = s.ShareRepo.DB.Table("sys_operation_log").
+		Select("sys_operation_log.user_id, sys_user.nickname AS user_name, MAX(sys_operation_log.create_time) AS view_time").
+		Joins("LEFT JOIN sys_user ON sys_user.id = sys_operation_log.user_id").
+		Where("sys_operation_log.resource_type = ? AND sys_operation_log.resource_id = ? AND sys_operation_log.oper_type = ?", resourceTypeShare, shareID, operTypeShareView).
+		Group("sys_operation_log.user_id, sys_user.nickname").
+		Order("view_time DESC").
+		Find(&viewers).Error
+
+	return viewers, err
 }
 
 // calcExpireTime 根据过期类型计算过期时间

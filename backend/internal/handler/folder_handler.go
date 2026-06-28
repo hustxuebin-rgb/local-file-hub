@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"local-file-hub/backend/internal/model"
@@ -15,14 +19,19 @@ import (
 	"local-file-hub/backend/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// taskIDFallbackCounter 降级方案原子计数器，避免进程ID重复
+var taskIDFallbackCounter uint64
 
 // FolderHandler 文件夹处理器
 type FolderHandler struct {
 	FolderRepo     *repository.FolderRepo
 	UserRepo       *repository.UserRepo
 	StorageService *service.StorageService
+	UploadTaskRepo *repository.UploadTaskRepo
 }
 
 // CreateFolderReq 创建文件夹请求
@@ -260,6 +269,76 @@ func (h *FolderHandler) DeleteFolder(c *gin.Context) {
 	response.SuccessWithMsg(c, "文件夹已删除", nil)
 }
 
+// UpdateFolderVisibilityReq 更新文件夹可见性请求
+type UpdateFolderVisibilityReq struct {
+	Visibility int8   `json:"visibility" binding:"oneof=0 1"`
+	Password   string `json:"password"` // 设为公有时需提供密码确认
+}
+
+// UpdateFolderVisibility 切换文件夹可见性（公共/私有）
+func (h *FolderHandler) UpdateFolderVisibility(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+
+	folderID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, response.CodeBadRequest, "参数格式错误")
+		return
+	}
+
+	var req UpdateFolderVisibilityReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: visibility 必须为 0 或 1")
+		return
+	}
+
+	// 验证文件夹所有权
+	folder, err := h.FolderRepo.FindByID(folderID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, response.CodeNotFound, "文件夹不存在")
+			return
+		}
+		response.Error(c, response.CodeInternal, "查询文件夹失败")
+		return
+	}
+
+	if folder.UserID != userID {
+		response.Error(c, response.CodeForbidden, "无权操作该文件夹")
+		return
+	}
+
+	// 设为公共(visibility=1)时必须提供密码确认
+	if req.Visibility == 1 {
+		if req.Password == "" {
+			response.Error(c, response.CodeBadRequest, "设为公共需要密码确认")
+			return
+		}
+		user, err := h.UserRepo.FindByID(userID)
+		if err != nil {
+			response.Error(c, response.CodeInternal, "获取用户信息失败")
+			return
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+			response.Error(c, response.CodePasswordWrong, "密码错误")
+			return
+		}
+	}
+
+	if err := h.FolderRepo.UpdateVisibility(userID, folderID, req.Visibility); err != nil {
+		response.Error(c, response.CodeInternal, "更新可见性失败")
+		return
+	}
+
+	// 同步更新关联的上传任务可见性（确保公共空间能查询到该文件夹）
+	if folder.TaskID != nil && *folder.TaskID != "" {
+		if err := h.UploadTaskRepo.UpdateVisibility(*folder.TaskID, req.Visibility); err != nil {
+			log.Printf("WARN: 同步 upload_task 可见性失败 taskID=%s: %v", *folder.TaskID, err)
+		}
+	}
+
+	response.SuccessWithMsg(c, "可见性更新成功", nil)
+}
+
 // MoveFolderReq 移动文件夹请求
 type MoveFolderReq struct {
 	FolderID       int64 `json:"folderId" binding:"required"`
@@ -433,6 +512,17 @@ type BatchCreateFolderResp struct {
 	Folders []BatchFolderResult `json:"folders"`
 }
 
+// genTaskID 生成上传任务ID（UUID格式）
+func genTaskID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// 熵源不足时降级：时间戳高8字节 + 进程ID低8字节
+		binary.BigEndian.PutUint64(b[0:8], uint64(time.Now().UnixNano()))
+		binary.BigEndian.PutUint64(b[8:16], atomic.AddUint64(&taskIDFallbackCounter, 1))
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
 // BatchCreateFolders 批量创建文件夹
 // 对文件夹按 tempKey 拓扑排序后逐层创建，同名冲突时复用已有文件夹
 func (h *FolderHandler) BatchCreateFolders(c *gin.Context) {
@@ -456,9 +546,43 @@ func (h *FolderHandler) BatchCreateFolders(c *gin.Context) {
 		return strings.Count(sorted[i].TempKey, "/") < strings.Count(sorted[j].TempKey, "/")
 	})
 
+	// 生成批次上传任务ID，关联所有新创建的文件夹
+	batchTaskID := genTaskID()
+
+	// 预取用户存储根路径，避免在事务内执行外部I/O（GetUserQuota 涉及外部存储服务调用）
+	userStorageRoot := ""
+	if req.ParentID == 0 {
+		user, err := h.StorageService.GetUserQuota(userID)
+		if err != nil {
+			response.Error(c, response.CodeInternal, "获取用户信息失败")
+			return
+		}
+		userStorageRoot = user.StorageRoot
+	}
+
 	// 在事务中执行批量创建，确保全部成功或全部回滚
 	var results []BatchFolderResult
 	err := h.FolderRepo.DB.Transaction(func(tx *gorm.DB) error {
+		// 先创建 upload_task 记录（用于后续公共空间判断文件夹来源）
+		vis := int8(0)
+		if req.IsPublic != nil {
+			vis = *req.IsPublic
+		}
+		ut := &model.UploadTask{
+			UserID:     userID,
+			TaskID:     batchTaskID,
+			FileName:   fmt.Sprintf("batch_%d_folders", len(sorted)),
+			TotalSize:  0,
+			ChunkSize:  0,
+			TotalChunk: 0,
+			FolderID:   req.ParentID,
+			Visibility: vis,
+			Status:     2, // COMPLETED
+		}
+		if err := tx.Create(ut).Error; err != nil {
+			return err
+		}
+
 		txRepo := h.FolderRepo.WithTx(tx)
 		created := make(map[string]int64)
 		results = make([]BatchFolderResult, 0, len(sorted))
@@ -506,11 +630,7 @@ func (h *FolderHandler) BatchCreateFolders(c *gin.Context) {
 				}
 				parentPath = parent.FullPath
 			} else {
-				user, ferr := h.StorageService.GetUserQuota(userID)
-				if ferr != nil {
-					return ferr
-				}
-				parentPath = user.StorageRoot
+				parentPath = userStorageRoot
 			}
 
 			fullPath := filepath.Join(parentPath, item.FolderName)
@@ -522,6 +642,7 @@ func (h *FolderHandler) BatchCreateFolders(c *gin.Context) {
 				FolderName: item.FolderName,
 				FullPath:   fullPath,
 				IsPublic:   req.IsPublic,
+				TaskID:     &batchTaskID,
 				CreateTime: now,
 				UpdateTime: now,
 			}

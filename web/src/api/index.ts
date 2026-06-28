@@ -14,6 +14,7 @@ export {
   deleteFolder,
   getTree,
   batchCreateFolders,
+  updateFolderVisibility,
 } from './folder';
 
 export {
@@ -30,6 +31,20 @@ export {
   recycleList,
   recycleRecover,
   recycleDelete,
+  uploadStatus,
+  uploadPause,
+  uploadResume,
+  getUnfinishedUploads,
+  downloadInit,
+  downloadStatus,
+  downloadPause,
+  downloadResume,
+  downloadCancel,
+  downloadList,
+  tasksList,
+  tasksHistory,
+  tasksStats,
+  tasksBatch,
 } from './file';
 
 export {
@@ -40,6 +55,7 @@ export {
   updateShare,
   cancelShare,
   batchCreateShare,
+  getShareViewers,
 } from './share';
 
 export {
@@ -47,6 +63,18 @@ export {
   removeFavorite,
   listFavorites,
 } from './favorite';
+
+export {
+  searchFriendUsers,
+  sendFriendRequest,
+  getReceivedRequests,
+  getSentRequests,
+  acceptRequest,
+  rejectRequest,
+  getFriendList,
+  deleteFriend,
+  checkFriend,
+} from './friend';
 
 export {
   listPublicFiles,

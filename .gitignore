@@ -23,5 +23,6 @@ Thumbs.db
 # Test data & build artifacts
 backend/data/
 miniapp/.swc/
+reports/
 web/screenshots/
 docs/

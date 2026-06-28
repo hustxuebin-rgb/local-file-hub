@@ -15,32 +15,66 @@ import {
   Input,
   Switch,
   Segmented,
+  Tooltip,
 } from 'antd';
-import { InboxOutlined, ReloadOutlined, PlusOutlined, FolderAddOutlined } from '@ant-design/icons';
+import {
+  InboxOutlined,
+  ReloadOutlined,
+  PlusOutlined,
+  FolderAddOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+} from '@ant-design/icons';
 import {
   uploadInit,
   uploadChunk,
   uploadMerge,
   uploadCancel,
+  uploadPause,
+  uploadResume,
   getTree,
   createFolder,
   batchCreateFolders,
 } from '@/api';
 import type { BatchFolderItem } from '@/api/folder';
 import { getErrorMessage } from '@/utils/errorCodes';
-import type { Folder } from '@/types';
+import { useTaskStore } from '@/stores/useTaskStore';
+import type { Folder, UploadTaskItem } from '@/types';
 
 const { Dragger } = Upload;
 const { Text } = Typography;
 const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 
+/** 将本地 UploadTask 转为全局 store 的 UploadTaskItem */
+function toUploadTaskItem(t: UploadTask, folderId?: number, visibility?: number): UploadTaskItem {
+  return {
+    id: t.uid,
+    taskId: t.taskId || '',
+    fileName: t.fileName,
+    filePath: t.filePath,
+    totalSize: t.fileSize,
+    totalChunk: t.totalChunks || 0,
+    finishedChunk: t.finishedChunks?.length || 0,
+    folderId: folderId || 0,
+    visibility: visibility || 0,
+    status: t.status,
+    progress: t.progress,
+    createTime: new Date().toISOString(),
+  };
+}
+
 interface UploadTask {
   uid: string;
+  taskId?: string;            // 后端返回的任务ID，用于暂停/恢复/重试
   fileName: string;
-  filePath?: string; // 文件夹上传时文件的相对路径
+  filePath?: string;          // 文件夹上传时文件的相对路径
   fileSize: number;
   progress: number;
-  status: 'pending' | 'uploading' | 'done' | 'error' | 'skipped';
+  status: 'pending' | 'uploading' | 'paused' | 'done' | 'error' | 'skipped';
+  totalChunks?: number;       // 总分片数
+  finishedChunks?: number[];  // 已完成分片索引列表
+  file?: File;                // 保留 File 引用用于恢复时重新分片
+  abortController?: AbortController; // 用于暂停/取消当前上传
 }
 
 interface ConflictInfo {
@@ -60,6 +94,7 @@ function UploadPage(): React.ReactNode {
   const [folderTree, setFolderTree] = useState<Folder[]>([]);
   const [targetFolderId, setTargetFolderId] = useState<number | null>(null);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
+  const [sessionTasks, setSessionTasks] = useState<UploadTask[]>([]);
   const [uploading, setUploading] = useState(false);
   const [queueIndex, setQueueIndex] = useState(0);
   const [queueTotal, setQueueTotal] = useState(0);
@@ -69,6 +104,8 @@ function UploadPage(): React.ReactNode {
   const [createFolderSubmitting, setCreateFolderSubmitting] = useState(false);
   const [newFolderIsPublic, setNewFolderIsPublic] = useState(0);
   const chunksRef = useRef<Map<string, string>>(new Map());
+  // 存储每个任务的 AbortController，key 为 taskUid
+  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   // 冲突弹窗队列：并发场景下多个文件同时冲突时排队处理
   const conflictQueueRef = useRef<
     Array<{
@@ -140,6 +177,7 @@ function UploadPage(): React.ReactNode {
         md5: '',
         folderId: effectiveFolderId,
         visibility: partition,
+        filePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
       });
 
       if (!initRes.data) {
@@ -243,6 +281,9 @@ function UploadPage(): React.ReactNode {
     files: FolderEntryItem[],
     folders: Map<string, string>,
   ): Promise<void> {
+    // 跳过隐藏文件和目录（以 "." 开头，如 .DS_Store、.git 等）及 __MACOSX 系统残留文件夹
+    if (entry.name.startsWith('.') || entry.name === '__MACOSX') return;
+
     if (entry.isDirectory) {
       const dirEntry = entry as FileSystemDirectoryEntry;
       const currentPath = basePath ? `${basePath}/${entry.name}` : entry.name;
@@ -425,6 +466,7 @@ function UploadPage(): React.ReactNode {
           fileSize: entry.file.size,
           progress: 0,
           status: 'pending',
+          file: entry.file, // 保留 File 引用用于暂停/恢复
         };
         setUploadTasks((prev) => [...prev, task]);
       }
@@ -446,105 +488,193 @@ function UploadPage(): React.ReactNode {
 
   /**
    * 带 uid 的上传（文件夹上传场景，任务已在列表中）
+   * 支持暂停/恢复/断点续传
    */
   const uploadFileWithUid = async (
     file: File,
     taskUid: string,
     folderId: number | null,
+    resumeFinishedChunks?: number[],
+    existingTaskId?: string,
   ): Promise<void> => {
     try {
-      const initRes = await uploadInit({
-        fileName: file.name,
-        fileSize: file.size,
-        md5: '',
-        folderId,
-        visibility: partition,
-      });
-
-      if (!initRes.data) {
-        throw new Error('初始化上传失败');
-      }
-
-      const { taskId, quickDone, chunkSize, totalChunks, conflictExists, conflictFileId } =
-        initRes.data;
-
-      if (quickDone) {
-        setUploadTasks((prev) =>
-          prev.map((t) =>
-            t.uid === taskUid ? { ...t, progress: 100, status: 'done' as const } : t,
-          ),
-        );
-        updateQueueProgress();
-        return;
-      }
+      let taskId = existingTaskId;
+      let totalChunks: number;
+      let effectiveChunkSize: number;
+      let finishedChunks: number[] = resumeFinishedChunks ?? [];
 
       if (!taskId) {
-        throw new Error('初始化上传失败: 未获取到taskId');
-      }
-
-      let overwriteFileId: number | undefined;
-      if (conflictExists && conflictFileId) {
-        const choice = await new Promise<'replace' | 'keepBoth' | 'cancel'>((resolve) => {
-          const isFirst = conflictQueueRef.current.length === 0;
-          conflictQueueRef.current.push({ fileName: file.name, conflictFileId, resolve });
-          if (isFirst) {
-            popNextConflict();
-          }
+        // 新上传：先初始化
+        const initRes = await uploadInit({
+          fileName: file.name,
+          fileSize: file.size,
+          md5: '',
+          folderId,
+          visibility: partition,
+          filePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
         });
 
-        if (choice === 'cancel') {
-          await uploadCancel(taskId);
+        if (!initRes.data) {
+          throw new Error('初始化上传失败');
+        }
+
+        const {
+          taskId: newTaskId,
+          quickDone,
+          chunkSize,
+          totalChunks: initTotalChunks,
+          conflictExists,
+          conflictFileId,
+        } = initRes.data;
+
+        if (quickDone) {
           setUploadTasks((prev) =>
-            prev.map((t) => (t.uid === taskUid ? { ...t, status: 'skipped' as const } : t)),
+            prev.map((t) =>
+              t.uid === taskUid ? { ...t, taskId: newTaskId, progress: 100, status: 'done' as const } : t,
+            ),
           );
           updateQueueProgress();
           return;
         }
 
-        if (choice === 'replace') {
-          overwriteFileId = conflictFileId;
+        if (!newTaskId) {
+          throw new Error('初始化上传失败: 未获取到taskId');
         }
+
+        taskId = newTaskId;
+
+        // 更新任务信息
+        totalChunks = initTotalChunks ?? Math.max(1, Math.ceil(file.size / (chunkSize ?? CHUNK_SIZE)));
+        effectiveChunkSize = chunkSize ?? CHUNK_SIZE;
+
+        // 更新任务中的 taskId 和分片信息
+        setUploadTasks((prev) =>
+          prev.map((t) =>
+            t.uid === taskUid
+              ? { ...t, taskId, totalChunks, finishedChunks, file }
+              : t,
+          ),
+        );
+
+        chunksRef.current.set(taskUid, taskId);
+
+        // 名称冲突检测
+        let overwriteFileId: number | undefined;
+        if (conflictExists && conflictFileId) {
+          const choice = await new Promise<'replace' | 'keepBoth' | 'cancel'>((resolve) => {
+            const isFirst = conflictQueueRef.current.length === 0;
+            conflictQueueRef.current.push({ fileName: file.name, conflictFileId, resolve });
+            if (isFirst) {
+              popNextConflict();
+            }
+          });
+
+          if (choice === 'cancel') {
+            await uploadCancel(taskId);
+            setUploadTasks((prev) =>
+              prev.map((t) => (t.uid === taskUid ? { ...t, status: 'skipped' as const } : t)),
+            );
+            updateQueueProgress();
+            return;
+          }
+
+          if (choice === 'replace') {
+            overwriteFileId = conflictFileId;
+          }
+        }
+      } else {
+        // 恢复上传：从已有的 taskId 获取分片信息
+        const taskInState = uploadTasks.find((t) => t.uid === taskUid);
+        totalChunks = taskInState?.totalChunks ?? Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+        effectiveChunkSize = taskInState?.totalChunks
+          ? Math.ceil(file.size / taskInState.totalChunks)
+          : CHUNK_SIZE;
+        chunksRef.current.set(taskUid, taskId);
       }
 
+      // 创建 AbortController 用于暂停
+      const abortController = new AbortController();
+      abortControllersRef.current.set(taskUid, abortController);
+
+      // 更新任务状态为上传中
       setUploadTasks((prev) =>
-        prev.map((t) => (t.uid === taskUid ? { ...t, status: 'uploading' as const } : t)),
+        prev.map((t) =>
+          t.uid === taskUid
+            ? {
+                ...t,
+                taskId,
+                status: 'uploading' as const,
+                finishedChunks,
+                abortController,
+              }
+            : t,
+        ),
       );
 
-      const effectiveChunkSize = chunkSize ?? CHUNK_SIZE;
-      const chunks = totalChunks ?? Math.max(1, Math.ceil(file.size / effectiveChunkSize));
-      chunksRef.current.set(taskUid, taskId);
+      // 分片上传循环（支持断点续传和暂停）
+      for (let i = 0; i < totalChunks; i++) {
+        // 检查是否已被暂停
+        if (abortController.signal.aborted) break;
 
-      for (let i = 0; i < chunks; i++) {
+        // 跳过已上传的分片
+        if (finishedChunks.includes(i)) continue;
+
         const start = i * effectiveChunkSize;
         const end = Math.min(start + effectiveChunkSize, file.size);
-        const chunk = file.slice(start, end);
+        const chunkBlob = file.slice(start, end);
 
         const formData = new FormData();
         formData.append('taskId', taskId);
         formData.append('chunkIndex', String(i));
-        formData.append('file', chunk, file.name);
+        formData.append('file', chunkBlob, file.name);
 
         await uploadChunk(formData);
 
-        const progress = Math.round(((i + 1) / chunks) * 100);
+        // 更新已完成分片列表
+        finishedChunks = [...finishedChunks, i];
+
+        const progress = Math.round((finishedChunks.length / totalChunks) * 100);
         setUploadTasks((prev) =>
           prev.map((t) =>
-            t.uid === taskUid ? { ...t, progress, status: 'uploading' as const } : t,
+            t.uid === taskUid
+              ? { ...t, progress, status: 'uploading' as const, finishedChunks }
+              : t,
           ),
         );
       }
 
-      await uploadMerge({ taskId, overwriteFileId });
+      // 检查是否被暂停
+      if (abortController.signal.aborted) {
+        setUploadTasks((prev) =>
+          prev.map((t) =>
+            t.uid === taskUid ? { ...t, status: 'paused' as const, abortController: undefined } : t,
+          ),
+        );
+        abortControllersRef.current.delete(taskUid);
+        return;
+      }
+
+      // 合并分片
+      await uploadMerge({ taskId, overwriteFileId: undefined });
 
       setUploadTasks((prev) =>
         prev.map((t) => (t.uid === taskUid ? { ...t, progress: 100, status: 'done' as const } : t)),
       );
+
+      abortControllersRef.current.delete(taskUid);
     } catch (err: unknown) {
       const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code;
-      message.error(`${file.name} 上传失败: ${code ? getErrorMessage(code) : '网络错误，请重试'}`);
-      setUploadTasks((prev) =>
-        prev.map((t) => (t.uid === taskUid ? { ...t, status: 'error' as const } : t)),
+      message.error(
+        `${file.name} 上传失败: ${code ? getErrorMessage(code) : '网络错误，请重试'}`,
       );
+      setUploadTasks((prev) =>
+        prev.map((t) =>
+          t.uid === taskUid
+            ? { ...t, status: 'error' as const, abortController: undefined }
+            : t,
+        ),
+      );
+      abortControllersRef.current.delete(taskUid);
     } finally {
       updateQueueProgress();
     }
@@ -561,6 +691,95 @@ function UploadPage(): React.ReactNode {
       setQueueIndex(done);
       return prev;
     });
+  };
+
+  /**
+   * 处理暂停按钮点击
+   */
+  const handlePause = async (task: UploadTask) => {
+    if (!task.taskId) return;
+    try {
+      await uploadPause(task.taskId);
+      // 中止当前上传
+      const ac = abortControllersRef.current.get(task.uid);
+      if (ac) {
+        ac.abort();
+      }
+    } catch (err: unknown) {
+      const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code;
+      message.error(getErrorMessage(code, '暂停失败'));
+    }
+  };
+
+  /**
+   * 处理恢复/重试按钮点击
+   */
+  const handleResume = async (task: UploadTask) => {
+    if (!task.taskId) return;
+
+    // 无 File 对象（刷新后）：弹出确认框引导重新选择文件
+    if (!task.file) {
+      Modal.confirm({
+        title: '断点续传',
+        content: `原文件路径: ${task.filePath || task.fileName}。刷新后需重新选择文件才能继续上传。`,
+        okText: '重新选择文件',
+        cancelText: '取消',
+        onOk: () => {
+          // 创建隐藏的 file input 让用户重新选择文件
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.onchange = (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (files && files.length > 0) {
+              const newFile = files[0];
+              // 更新本地任务的 file 引用
+              setUploadTasks((prev) =>
+                prev.map((t) =>
+                  t.uid === task.uid ? { ...t, file: newFile } : t,
+                ),
+              );
+              // 文件绑定后自动触发恢复
+              const updatedTask = { ...task, file: newFile };
+              setTimeout(() => handleResumeDirect(updatedTask), 100);
+            }
+          };
+          input.click();
+        },
+      });
+      return;
+    }
+    await handleResumeDirect(task);
+  };
+
+  /**
+   * 直接恢复上传（确保 file 存在）
+   */
+  const handleResumeDirect = async (task: UploadTask) => {
+    if (!task.taskId || !task.file) return;
+    try {
+      const res = await uploadResume(task.taskId);
+      const finishedChunks = res.data?.finishedChunks ?? task.finishedChunks ?? [];
+
+      // 更新已完成分片列表
+      setUploadTasks((prev) =>
+        prev.map((t) =>
+          t.uid === task.uid ? { ...t, finishedChunks, status: 'pending' as const } : t,
+        ),
+      );
+
+      // 从断点继续上传，使用当前选中的目标文件夹
+      await uploadFileWithUid(task.file, task.uid, targetFolderId, finishedChunks, task.taskId);
+    } catch (err: unknown) {
+      const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code;
+      message.error(getErrorMessage(code, '恢复上传失败'));
+    }
+  };
+
+  /**
+   * 处理重试按钮点击（与恢复逻辑相同，从断点继续）
+   */
+  const handleRetry = async (task: UploadTask) => {
+    await handleResume(task);
   };
 
   // 批量上传：每个文件独立创建异步任务，并发执行
@@ -609,6 +828,8 @@ function UploadPage(): React.ReactNode {
    * 单文件上传入口（拖拽/点击选择普通文件）
    */
   const handleBeforeUpload = (file: File): boolean => {
+    // 跳过隐藏文件（以 "." 开头，如 .DS_Store）
+    if (file.name.startsWith('.')) return false;
     if (!targetFolderId) {
       message.warning('请先选择目标文件夹');
       return false;
@@ -624,11 +845,14 @@ function UploadPage(): React.ReactNode {
     const task: UploadTask = {
       uid: taskUid,
       fileName: file.name,
+      filePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
       fileSize: file.size,
       progress: 0,
       status: 'pending',
+      file, // 保留 File 引用用于暂停/恢复
     };
     setUploadTasks((prev) => [...prev, task]);
+    setSessionTasks((prev) => [...prev, task]);
 
     uploadFileWithUid(file, taskUid, targetFolderId).finally(() => {
       setUploadTasks((prev) => {
@@ -686,6 +910,11 @@ function UploadPage(): React.ReactNode {
           }
         }
       }
+
+      // 跳过隐藏文件（以 "." 开头，如 .DS_Store）
+      if (fileName.startsWith('.')) continue;
+      // 跳过 __MACOSX 系统残留文件夹内的文件
+      if (dirPath.split('/').some(part => part === '__MACOSX')) continue;
 
       entries.push({
         path: dirPath,
@@ -774,6 +1003,87 @@ function UploadPage(): React.ReactNode {
     };
   }, []);
 
+  // 注册上传回调到全局 store，供 TaskManagerPanel 调用
+  useEffect(() => {
+    const store = useTaskStore.getState();
+    store.setCallbacks({
+      ...store.callbacks,
+      onPauseUpload: (task) => {
+        const local = uploadTasks.find((t) => t.uid === task.id);
+        if (local) handlePause(local);
+      },
+      onResumeUpload: (task) => {
+        const local = uploadTasks.find((t) => t.uid === task.id);
+        if (local) handleResume(local);
+      },
+      onCancelUpload: (task) => {
+        const local = uploadTasks.find((t) => t.uid === task.id);
+        if (local && local.taskId) {
+          uploadCancel(local.taskId).catch(() => {});
+          setUploadTasks((prev) => prev.map((t) => (t.uid === local.uid ? { ...t, status: 'skipped' as const } : t)));
+        }
+      },
+    });
+  }, [uploadTasks]);
+
+  // 同步本地 uploadTasks 到全局 store
+  useEffect(() => {
+    const store = useTaskStore.getState();
+    uploadTasks.forEach((t) => {
+      const item = toUploadTaskItem(t, targetFolderId ?? undefined, partition);
+      if (t.status === 'done' || t.status === 'skipped' || t.status === 'error') {
+        store.addUploadTask(item);
+      } else {
+        store.addUploadTask(item);
+      }
+    });
+    // 清理 store 中已不存在的任务
+    const localIds = new Set(uploadTasks.map((t) => t.uid));
+    store.uploadTasks.forEach((st) => {
+      if (!localIds.has(st.id)) {
+        store.removeUploadTask(st.id);
+      }
+    });
+  }, [uploadTasks, targetFolderId, partition]);
+
+  // 页面加载时恢复未完成的上传任务
+  useEffect(() => {
+    loadUnfinishedUploads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const loadUnfinishedUploads = async () => {
+    try {
+      const res = await getUnfinishedUploads();
+      if (!res.data || res.data.length === 0) return;
+
+      const recoveredTasks: UploadTask[] = res.data.map((task): UploadTask => ({
+        uid: `recovered_${task.taskId}`,
+        taskId: task.taskId,
+        fileName: task.fileName,
+        filePath: task.filePath,
+        fileSize: task.totalSize,
+        progress:
+          task.totalChunk > 0
+            ? Math.round((task.finishedChunk / task.totalChunk) * 100)
+            : 0,
+        status: 'paused' as const,
+        totalChunks: task.totalChunk,
+        finishedChunks: task.finishedChunk > 0
+          ? Array.from({ length: task.finishedChunk }, (_, i) => i)
+          : [],
+      }));
+
+      setUploadTasks((prev) => [...prev, ...recoveredTasks]);
+      message.info(
+        `检测到 ${recoveredTasks.length} 个未完成的上传任务。刷新页面后需重新选择文件才能恢复上传。`,
+        5,
+      );
+    } catch {
+      // 静默失败
+    }
+  };
+
   const columns = [
     { title: '文件名', dataIndex: 'fileName', key: 'fileName' },
     {
@@ -797,30 +1107,81 @@ function UploadPage(): React.ReactNode {
       title: '进度',
       dataIndex: 'progress',
       key: 'progress',
-      width: 120,
-      render: (progress: number, record: UploadTask) => (
-        <Progress
-          percent={progress}
-          size="small"
-          status={record.status === 'error' ? 'exception' : undefined}
-        />
-      ),
+      width: 130,
+      render: (progress: number, record: UploadTask) => {
+        let strokeColor: string | undefined;
+        if (record.status === 'error') strokeColor = undefined; // exception 红色
+        else if (record.status === 'paused') strokeColor = '#fa8c16'; // 橙色
+        return (
+          <Progress
+            percent={progress}
+            size="small"
+            status={record.status === 'error' ? 'exception' : undefined}
+            strokeColor={strokeColor}
+          />
+        );
+      },
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 80,
       render: (status: string) => {
         const statusMap: Record<string, { color: string; text: string }> = {
           pending: { color: 'default', text: '等待中' },
           uploading: { color: 'processing', text: '上传中' },
+          paused: { color: 'warning', text: '已暂停' },
           done: { color: 'success', text: '已完成' },
           error: { color: 'error', text: '失败' },
           skipped: { color: 'warning', text: '已跳过' },
         };
         const s = statusMap[status] ?? { color: 'default', text: status };
         return <Tag color={s.color}>{s.text}</Tag>;
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_: unknown, record: UploadTask) => {
+        if (record.status === 'uploading') {
+          return (
+            <Tooltip title="暂停">
+              <Button
+                type="text"
+                size="small"
+                icon={<PauseCircleOutlined />}
+                onClick={() => handlePause(record)}
+              />
+            </Tooltip>
+          );
+        }
+        if (record.status === 'paused') {
+          return (
+            <Tooltip title="继续上传">
+              <Button
+                type="text"
+                size="small"
+                icon={<PlayCircleOutlined />}
+                onClick={() => handleResume(record)}
+              />
+            </Tooltip>
+          );
+        }
+        if (record.status === 'error') {
+          return (
+            <Tooltip title="重试">
+              <Button
+                type="text"
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={() => handleRetry(record)}
+              />
+            </Tooltip>
+          );
+        }
+        return null;
       },
     },
   ];

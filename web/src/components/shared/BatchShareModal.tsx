@@ -15,9 +15,10 @@ const SHARE_PERM_OPTIONS = [
 ];
 
 const EXPIRE_TYPE_OPTIONS = [
+  { value: 2, label: '1天' },
+  { value: 3, label: '7天' },
+  { value: 4, label: '30天' },
   { value: 1, label: '永久' },
-  { value: 2, label: '7天' },
-  { value: 3, label: '30天' },
 ];
 
 interface BatchShareModalProps {

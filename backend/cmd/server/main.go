@@ -46,15 +46,29 @@ func main() {
 		&model.Folder{},
 		&model.FileInfo{},
 		&model.UploadTask{},
+		&model.DownloadTask{},
 		&model.ShareRecord{},
+		&model.Favorite{},
 		&model.SysOperationLog{},
 		&model.SysWarnLog{},
+		&model.FriendRelation{},
+		&model.FriendRequest{},
 	); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 
 	// 启动后台清理工作器
 	(&worker.CleanupWorker{DB: db}).Start()
+
+	// 启动后台任务清理工作器（清理过期上传/下载任务）
+	uploadTaskRepo := &repository.UploadTaskRepo{DB: db}
+	downloadTaskRepo := &repository.DownloadTaskRepo{DB: db}
+	(&worker.TaskCleanupWorker{
+		DB:               db,
+		UploadTaskRepo:   uploadTaskRepo,
+		DownloadTaskRepo: downloadTaskRepo,
+		ChunkDir:         cfg.Storage.TempPath,
+	}).Start()
 
 	// 启动后台同步工作器
 	operationLogRepo := &repository.OperationLogRepo{DB: db}

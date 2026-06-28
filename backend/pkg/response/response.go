@@ -8,12 +8,13 @@ import (
 
 // 错误码常量
 const (
-	CodeSuccess      = 200
-	CodeBadRequest   = 400
-	CodeUnauthorized = 401
-	CodeForbidden    = 403
-	CodeNotFound     = 404
-	CodeInternal     = 500
+	CodeSuccess        = 200
+	CodeBadRequest     = 400
+	CodeUnauthorized   = 401
+	CodeForbidden      = 403
+	CodeNotFound       = 404
+	CodeInternal       = 500
+	CodePasswordWrong  = 20005 // 密码确认失败
 )
 
 // Response 统一响应结构体

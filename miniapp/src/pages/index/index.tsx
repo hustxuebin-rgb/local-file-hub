@@ -1,6 +1,6 @@
 import { View, Text, Image, Input, ScrollView } from '@tarojs/components';
 import { useDidShow, usePullDownRefresh, useReachBottom } from '@tarojs/taro';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import Taro from '@tarojs/taro';
 import { Button, Loading, Empty, Dialog, ActionSheet, Cell, Checkbox } from '@nutui/nutui-react-taro';
 import useAuthStore from '../../stores/authStore';
@@ -12,6 +12,7 @@ import {
   addFavorite,
   removeFavorite,
   listFavorites,
+  getTasksList,
 } from '../../utils/api';
 import type { Folder, FileInfo, ServerInfo, FavoriteItem } from '../../utils/api';
 import './index.scss';
@@ -82,6 +83,9 @@ function IndexPage(_props: IndexProps): JSX.Element {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // 任务
+  const [activeTaskCount, setActiveTaskCount] = useState(0);
+
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -99,6 +103,7 @@ function IndexPage(_props: IndexProps): JSX.Element {
     setHasMore(true);
     loadData(1);
     loadFavorites();
+    loadTaskCount();
   });
 
   usePullDownRefresh(async () => {
@@ -106,6 +111,7 @@ function IndexPage(_props: IndexProps): JSX.Element {
     setHasMore(true);
     await loadData(1);
     await loadFavorites();
+    loadTaskCount();
     Taro.stopPullDownRefresh();
   });
 
@@ -159,6 +165,33 @@ function IndexPage(_props: IndexProps): JSX.Element {
   const loadMore = useCallback(() => {
     loadData(page + 1);
   }, [page, loadData]);
+
+  const loadTaskCount = useCallback(async () => {
+    try {
+      const res = await getTasksList();
+      const total = (res.uploadTasks || []).length + (res.downloadTasks || []).length;
+      setActiveTaskCount(total);
+    } catch {
+      setActiveTaskCount(0);
+    }
+  }, []);
+
+  // 将文件夹和文件合并为统一列表（文件夹在前，文件在后）
+  const mergedItems = useMemo(() => {
+    const folderItems = folders.map((f) => ({
+      _type: 'folder' as const,
+      id: f.id,
+      name: f.folderName,
+      data: f,
+    }));
+    const fileItems = files.map((f) => ({
+      _type: 'file' as const,
+      id: f.id,
+      name: f.fileName,
+      data: f,
+    }));
+    return [...folderItems, ...fileItems];
+  }, [folders, files]);
 
   const handleSearch = useCallback((value: string) => {
     setSearchKeyword(value);
@@ -355,6 +388,15 @@ function IndexPage(_props: IndexProps): JSX.Element {
           <Text className="index-page__quick-nav-icon">📊</Text>
           <Text className="index-page__quick-nav-label">统计</Text>
         </View>
+        <View className="index-page__quick-nav-item" onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })}>
+          <View className="index-page__quick-nav-icon-wrap">
+            <Text className="index-page__quick-nav-icon">📋</Text>
+            {activeTaskCount > 0 && (
+              <Text className="index-page__quick-nav-badge">{activeTaskCount}</Text>
+            )}
+          </View>
+          <Text className="index-page__quick-nav-label">任务</Text>
+        </View>
       </View>
 
       {/* 工具栏：排序 + 视图切换 + 多选 */}
@@ -427,7 +469,7 @@ function IndexPage(_props: IndexProps): JSX.Element {
           <View className="index-page__loading"><Loading>加载中...</Loading></View>
         ) : (
           <View className="index-page__content">
-            {/* 多选时全选栏 */}
+            {/* 多选时全选栏 - 仅计算文件数量 */}
             {multiSelectMode && files.length > 0 && (
               <View className="index-page__select-all-bar">
                 <Checkbox
@@ -439,106 +481,110 @@ function IndexPage(_props: IndexProps): JSX.Element {
               </View>
             )}
 
-            {/* 文件夹列表 */}
-            {folders.length > 0 && (
-              <View className="index-page__section">
-                <Text className="index-page__section-title">文件夹</Text>
-                <View className="index-page__folder-list">
-                  {folders.map((folder) => (
+            {/* 统一列表（文件夹在前，文件在后） */}
+            {mergedItems.length === 0 ? (
+              <Empty description="暂无内容" />
+            ) : viewMode === 'list' ? (
+              /* 列表视图 */
+              <View className="index-page__file-list-view">
+                {mergedItems.map((item) =>
+                  item._type === 'folder' ? (
                     <View
-                      key={folder.id}
+                      key={`folder-${item.id}`}
                       className="index-page__folder-item"
-                      onClick={() => handleFolderClick(folder)}
+                      onClick={() => handleFolderClick(item.data)}
                     >
                       <Text className="index-page__folder-icon">📁</Text>
-                      <Text className="index-page__folder-name">{folder.folderName}</Text>
+                      <Text className="index-page__folder-name">{item.name}</Text>
                     </View>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* 文件列表 */}
-            <View className="index-page__section">
-              <Text className="index-page__section-title">文件</Text>
-              {files.length === 0 ? (
-                <Empty description="暂无文件" />
-              ) : viewMode === 'list' ? (
-                /* 列表视图 */
-                <View className="index-page__file-list-view">
-                  {files.map((file) => (
+                  ) : (
                     <View
-                      key={file.id}
-                      className={`index-page__file-list-item ${multiSelectMode && selectedIds.has(file.id) ? 'selected' : ''}`}
-                      onClick={() => multiSelectMode ? handleToggleSelect(file.id) : handleFilePreview(file)}
+                      key={`file-${item.id}`}
+                      className={`index-page__file-list-item ${multiSelectMode && selectedIds.has(item.id) ? 'selected' : ''}`}
+                      onClick={() => multiSelectMode ? handleToggleSelect(item.id) : handleFilePreview(item.data)}
                     >
                       {multiSelectMode && (
                         <Checkbox
                           className="index-page__file-checkbox"
-                          checked={selectedIds.has(file.id)}
-                          onChange={() => handleToggleSelect(file.id)}
+                          checked={selectedIds.has(item.id)}
+                          onChange={() => handleToggleSelect(item.id)}
                         />
                       )}
                       <Cell
                         className="index-page__file-cell"
                         title={
                           <View className="index-page__file-cell-title">
-                            {renderFileIcon(file)}
-                            <Text className="index-page__file-cell-name">{file.fileName}</Text>
+                            {renderFileIcon(item.data)}
+                            <Text className="index-page__file-cell-name">{item.data.fileName}</Text>
                           </View>
                         }
-                        description={`${formatFileSize(file.fileSize)} · ${file.createTime?.slice(0, 10)}`}
+                        description={`${formatFileSize(item.data.fileSize)} · ${item.data.createTime?.slice(0, 10)}`}
                         onClick={
                           multiSelectMode
-                            ? () => handleToggleSelect(file.id)
-                            : () => handleFilePreview(file)
+                            ? () => handleToggleSelect(item.id)
+                            : () => handleFilePreview(item.data)
                         }
                         extra={
                           <Text
-                            className={`index-page__favorite-btn ${favoriteIds.has(file.id) ? 'favorited' : ''}`}
-                            onClick={(e) => handleToggleFavorite(file.id, e)}
+                            className={`index-page__favorite-btn ${favoriteIds.has(item.id) ? 'favorited' : ''}`}
+                            onClick={(e) => handleToggleFavorite(item.id, e)}
                           >
-                            {favoriteIds.has(file.id) ? '⭐' : '☆'}
+                            {favoriteIds.has(item.id) ? '⭐' : '☆'}
                           </Text>
                         }
                       />
                     </View>
-                  ))}
-                </View>
-              ) : (
-                /* 图标视图 */
-                files.map((file) => (
+                  )
+                )}
+              </View>
+            ) : (
+              /* 图标视图 */
+              mergedItems.map((item) =>
+                item._type === 'folder' ? (
                   <View
-                    key={file.id}
-                    className={`index-page__file-item ${multiSelectMode ? 'multi-select' : ''} ${selectedIds.has(file.id) ? 'selected' : ''}`}
-                    onClick={() => multiSelectMode ? handleToggleSelect(file.id) : handleFilePreview(file)}
+                    key={`folder-${item.id}`}
+                    className="index-page__file-item"
+                    onClick={() => handleFolderClick(item.data)}
+                  >
+                    <View className="index-page__file-icon">
+                      <Text className="index-page__file-emoji">📁</Text>
+                    </View>
+                    <View className="index-page__file-info">
+                      <Text className="index-page__file-name">{item.name}</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View
+                    key={`file-${item.id}`}
+                    className={`index-page__file-item ${multiSelectMode ? 'multi-select' : ''} ${selectedIds.has(item.id) ? 'selected' : ''}`}
+                    onClick={() => multiSelectMode ? handleToggleSelect(item.id) : handleFilePreview(item.data)}
                   >
                     {multiSelectMode && (
                       <Checkbox
                         className="index-page__file-checkbox"
-                        checked={selectedIds.has(file.id)}
-                        onChange={() => handleToggleSelect(file.id)}
+                        checked={selectedIds.has(item.id)}
+                        onChange={() => handleToggleSelect(item.id)}
                       />
                     )}
-                    <View className="index-page__file-icon">{renderFileIcon(file)}</View>
+                    <View className="index-page__file-icon">{renderFileIcon(item.data)}</View>
                     <View className="index-page__file-info">
-                      <Text className="index-page__file-name">{file.fileName}</Text>
+                      <Text className="index-page__file-name">{item.data.fileName}</Text>
                       <Text className="index-page__file-meta">
-                        {formatFileSize(file.fileSize)} · {file.createTime?.slice(0, 10)}
+                        {formatFileSize(item.data.fileSize)} · {item.data.createTime?.slice(0, 10)}
                       </Text>
                     </View>
                     {!multiSelectMode && (
                       <Text
-                        className={`index-page__favorite-btn ${favoriteIds.has(file.id) ? 'favorited' : ''}`}
-                        onClick={(e) => handleToggleFavorite(file.id, e)}
+                        className={`index-page__favorite-btn ${favoriteIds.has(item.id) ? 'favorited' : ''}`}
+                        onClick={(e) => handleToggleFavorite(item.id, e)}
                       >
-                        {favoriteIds.has(file.id) ? '⭐' : '☆'}
+                        {favoriteIds.has(item.id) ? '⭐' : '☆'}
                       </Text>
                     )}
                   </View>
-                ))
-              )}
-            </View>
+                )
+              )
+            )}
 
             {/* 加载更多 */}
             {loadingMore && (

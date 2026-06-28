@@ -16,6 +16,7 @@ const mockFile: FileInfo = {
   mimeType: 'image/png',
   md5: 'abc',
   fullPath: '/test.png',
+  visibility: 0,
   isDelete: 0,
   createTime: '2026-01-01 00:00:00',
 };

@@ -8,10 +8,10 @@ import type { ShareRecord } from '@/types';
 
 const shareTypeMap: Record<number, string> = { 1: '文件', 2: '文件夹' };
 const sharePermMap: Record<number, string> = { 1: '只读', 2: '可上传' };
-const expireTypeMap: Record<number, string> = { 1: '1天', 2: '7天', 3: '30天', 4: '永久' };
+const expireTypeMap: Record<number, string> = { 1: '永久', 2: '1天', 3: '7天', 4: '30天' };
 const statusMap: Record<number, { color: string; text: string }> = {
-  0: { color: 'processing', text: '有效' },
-  1: { color: 'default', text: '已取消' },
+  0: { color: 'default', text: '已取消' },
+  1: { color: 'processing', text: '有效' },
   2: { color: 'error', text: '已过期' },
 };
 
@@ -81,7 +81,7 @@ function ShareReceivedPage(): React.ReactNode {
       key: 'action',
       render: (_: unknown, record: ShareRecord) => (
         <Space>
-          {record.status === 0 && (
+          {record.status === 1 && (
             <Button
               type="link"
               size="small"

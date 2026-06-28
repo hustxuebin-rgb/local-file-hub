@@ -329,6 +329,11 @@ func (h *StorageHandler) ScanMountsHandler(c *gin.Context) {
 			continue
 		}
 
+		// 过滤系统保护盘
+		if isSystemProtectedMount(mountPoint, device, fsType) {
+			continue
+		}
+
 		mounts = append(mounts, model.MountInfo{
 			Device:     device,
 			MountPoint: mountPoint,
@@ -474,4 +479,56 @@ func (h *StorageHandler) DiskListSimpleHandler(c *gin.Context) {
 	}
 
 	response.Success(c, result)
+}
+
+// isSystemProtectedMount 判断挂载点是否为系统保护盘
+func isSystemProtectedMount(mountPoint, device, fsType string) bool {
+	switch runtime.GOOS {
+	case "darwin":
+		return isDarwinSystemMount(mountPoint, device)
+	default:
+		return isLinuxSystemMount(mountPoint, device, fsType)
+	}
+}
+
+// isDarwinSystemMount macOS 系统保护盘判断
+func isDarwinSystemMount(mountPoint, device string) bool {
+	// 系统根
+	if mountPoint == "/" {
+		return true
+	}
+	// /System/Volumes/* （Data, Preboot, VM, Recovery, Update, Hardware, xarts）
+	if strings.HasPrefix(mountPoint, "/System/Volumes/") {
+		return true
+	}
+	// 虚拟内存交换分区
+	if mountPoint == "/private/var/vm" {
+		return true
+	}
+	// com.apple 系列（如 com.apple.os.update-*）
+	if strings.Contains(device, "com.apple") {
+		return true
+	}
+	return false
+}
+
+// isLinuxSystemMount Linux 系统保护盘判断
+func isLinuxSystemMount(mountPoint, device, fsType string) bool {
+	// 系统根
+	if mountPoint == "/" {
+		return true
+	}
+	// boot 分区
+	if mountPoint == "/boot" || mountPoint == "/boot/efi" {
+		return true
+	}
+	// snap 包（squashfs）
+	if fsType == "squashfs" {
+		return true
+	}
+	// loop 设备
+	if strings.HasPrefix(device, "/dev/loop") {
+		return true
+	}
+	return false
 }

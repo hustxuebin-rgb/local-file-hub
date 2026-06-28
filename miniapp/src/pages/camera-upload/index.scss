@@ -52,6 +52,26 @@
     font-size: 32rpx;
   }
 
+  &__progress {
+    margin-bottom: 24rpx;
+  }
+
+  &__progress-text {
+    display: block;
+    text-align: center;
+    font-size: 24rpx;
+    color: #999999;
+    margin-top: 12rpx;
+  }
+
+  &__chunk-info {
+    display: block;
+    text-align: center;
+    font-size: 22rpx;
+    color: #1677ff;
+    margin-top: 8rpx;
+  }
+
   &__upload-btn {
     margin-top: 16rpx;
   }

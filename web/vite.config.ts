@@ -15,7 +15,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://local-file-hub.local:8080',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
     },

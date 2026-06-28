@@ -10,6 +10,7 @@ type Folder struct {
 	FolderName string    `gorm:"column:folder_name;type:varchar(100);not null;uniqueIndex:uk_user_parent_name" json:"folderName"`
 	FullPath   string    `gorm:"column:full_path;type:varchar(500);not null" json:"fullPath"`
 	IsPublic   *int8     `gorm:"column:is_public;type:tinyint" json:"isPublic"`
+	TaskID     *string   `gorm:"column:task_id;type:varchar(64)" json:"taskId"`
 	Sort       int       `gorm:"column:sort;type:int;not null;default:0" json:"sort"`
 	CreateTime time.Time `gorm:"column:create_time;type:datetime;not null;autoCreateTime" json:"createTime"`
 	UpdateTime time.Time `gorm:"column:update_time;type:datetime;not null;autoUpdateTime" json:"updateTime"`

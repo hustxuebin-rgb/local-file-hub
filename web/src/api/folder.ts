@@ -62,3 +62,8 @@ export function batchCreateFolders(
 ): Promise<ApiResponse<{ folders: BatchFolderResult[] }>> {
   return client.post('/api/folder/batch', data).then((res) => res.data);
 }
+
+/** 更新文件夹可见性 */
+export function updateFolderVisibility(id: number, visibility: number, password?: string): Promise<ApiResponse> {
+  return client.put(`/api/folder/${id}/visibility`, { visibility, password }).then((res) => res.data);
+}

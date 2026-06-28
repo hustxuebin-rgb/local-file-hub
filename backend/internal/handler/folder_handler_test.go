@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -394,4 +396,296 @@ func TestCreateFolder_MissingFolderName(t *testing.T) {
 	var resp response.Response
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, 400, resp.Code)
+}
+
+// ======================== UpdateFolderVisibility ========================
+
+func setupVisibilityTestDB(t *testing.T) (*gorm.DB, int64) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	err = db.AutoMigrate(&model.Folder{}, &model.SysUser{}, &model.UploadTask{})
+	require.NoError(t, err)
+
+	hashedPwd, _ := bcrypt.GenerateFromPassword([]byte("test123"), bcrypt.MinCost)
+	user := &model.SysUser{
+		Username: "testuser", Password: string(hashedPwd), Nickname: "测试用户",
+		Role: 2, StorageRoot: "/data/user_testuser", StorageQuota: 107374182400, Status: 1,
+	}
+	require.NoError(t, db.Create(user).Error)
+	return db, user.ID
+}
+
+func newVisibilityHandler(db *gorm.DB) *FolderHandler {
+	return &FolderHandler{
+		FolderRepo:     &repository.FolderRepo{DB: db},
+		UserRepo:       &repository.UserRepo{DB: db},
+		StorageService: &service.StorageService{DB: db, UserRepo: &repository.UserRepo{DB: db}, FolderRepo: &repository.FolderRepo{DB: db}, FileRepo: &repository.FileRepo{DB: db}},
+		UploadTaskRepo: &repository.UploadTaskRepo{DB: db},
+	}
+}
+
+func seedTestFolder(t *testing.T, db *gorm.DB, userID int64, name string, isPublic *int8, taskID *string) int64 {
+	t.Helper()
+	f := &model.Folder{
+		UserID: userID, ParentID: 0, FolderName: name,
+		FullPath: "/data/user_testuser/" + name, IsPublic: isPublic, TaskID: taskID,
+	}
+	require.NoError(t, db.Create(f).Error)
+	return f.ID
+}
+
+func TestUpdateFolderVisibility_SetPublic_WithPassword(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+	folderID := seedTestFolder(t, db, userID, "私密文件夹", int8Ptr(0), nil)
+
+	body := `{"visibility":1,"password":"test123"}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/"+strconv.FormatInt(folderID, 10)+"/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(folderID, 10)}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, "可见性更新成功", resp.Msg)
+
+	var folder model.Folder
+	require.NoError(t, db.First(&folder, folderID).Error)
+	require.NotNil(t, folder.IsPublic)
+	assert.Equal(t, int8(1), *folder.IsPublic)
+}
+
+func TestUpdateFolderVisibility_SetPrivate_NoPasswordNeeded(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+	folderID := seedTestFolder(t, db, userID, "公共文件夹", int8Ptr(1), nil)
+
+	body := `{"visibility":0}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/"+strconv.FormatInt(folderID, 10)+"/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(folderID, 10)}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 200, resp.Code)
+
+	var folder model.Folder
+	require.NoError(t, db.First(&folder, folderID).Error)
+	require.NotNil(t, folder.IsPublic)
+	assert.Equal(t, int8(0), *folder.IsPublic)
+}
+
+func TestUpdateFolderVisibility_MissingPassword_WhenPublic(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+	folderID := seedTestFolder(t, db, userID, "私有文件夹", int8Ptr(0), nil)
+
+	body := `{"visibility":1}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/"+strconv.FormatInt(folderID, 10)+"/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(folderID, 10)}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 400, resp.Code)
+	assert.Contains(t, resp.Msg, "密码确认")
+}
+
+func TestUpdateFolderVisibility_WrongPassword(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+	folderID := seedTestFolder(t, db, userID, "私有文件夹", int8Ptr(0), nil)
+
+	body := `{"visibility":1,"password":"wrongpassword"}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/"+strconv.FormatInt(folderID, 10)+"/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(folderID, 10)}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 20005, resp.Code)
+	assert.Contains(t, resp.Msg, "密码错误")
+}
+
+func TestUpdateFolderVisibility_FolderNotFound(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+
+	body := `{"visibility":1,"password":"test123"}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/99999/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: "99999"}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 404, resp.Code)
+}
+
+func TestUpdateFolderVisibility_NotOwner(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+	otherUser := &model.SysUser{Username: "other", Password: "xxx", Nickname: "其他人", Role: 2, StorageRoot: "/data/other", StorageQuota: 107374182400, Status: 1}
+	require.NoError(t, db.Create(otherUser).Error)
+	folderID := seedTestFolder(t, db, otherUser.ID, "他人文件夹", int8Ptr(0), nil)
+
+	body := `{"visibility":1,"password":"test123"}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/"+strconv.FormatInt(folderID, 10)+"/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(folderID, 10)}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 403, resp.Code)
+}
+
+func TestUpdateFolderVisibility_InvalidVisibilityValue(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+	folderID := seedTestFolder(t, db, userID, "测试文件夹", int8Ptr(0), nil)
+
+	body := `{"visibility":99,"password":"test123"}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/"+strconv.FormatInt(folderID, 10)+"/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(folderID, 10)}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 400, resp.Code)
+}
+
+func TestUpdateFolderVisibility_InvalidFolderID(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+
+	body := `{"visibility":1,"password":"test123"}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/abc/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: "abc"}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 400, resp.Code)
+}
+
+func TestUpdateFolderVisibility_SyncUploadTask(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+
+	taskID := "test-task-001"
+	ut := &model.UploadTask{
+		UserID: userID, TaskID: taskID, FileName: "test", TotalSize: 0,
+		ChunkSize: 0, TotalChunk: 0, FolderID: 0, Visibility: 0, Status: 3,
+	}
+	require.NoError(t, db.Create(ut).Error)
+
+	folderID := seedTestFolder(t, db, userID, "关联文件夹", int8Ptr(0), &taskID)
+
+	body := `{"visibility":1,"password":"test123"}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/"+strconv.FormatInt(folderID, 10)+"/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(folderID, 10)}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 200, resp.Code)
+
+	var updatedUT model.UploadTask
+	require.NoError(t, db.Where("task_id = ?", taskID).First(&updatedUT).Error)
+	assert.Equal(t, int8(1), updatedUT.Visibility)
+}
+
+func TestUpdateFolderVisibility_NoTaskID_NoSync(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+	folderID := seedTestFolder(t, db, userID, "无关联文件夹", int8Ptr(0), nil)
+
+	body := `{"visibility":1,"password":"test123"}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/"+strconv.FormatInt(folderID, 10)+"/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(folderID, 10)}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 200, resp.Code)
+}
+
+func TestUpdateFolderVisibility_Idempotent(t *testing.T) {
+	db, userID := setupVisibilityTestDB(t)
+	handler := newVisibilityHandler(db)
+	folderID := seedTestFolder(t, db, userID, "已是公共", int8Ptr(1), nil)
+
+	body := `{"visibility":1,"password":"test123"}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/folder/"+strconv.FormatInt(folderID, 10)+"/visibility", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatInt(folderID, 10)}}
+
+	handler.UpdateFolderVisibility(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 200, resp.Code)
 }

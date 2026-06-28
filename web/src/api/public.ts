@@ -11,6 +11,7 @@ interface PublicListParams {
   page?: number;
   pageSize?: number;
   folderId?: number;
+  signal?: AbortSignal;
 }
 
 interface PublicListData {
@@ -19,7 +20,8 @@ interface PublicListData {
 }
 
 export function listPublicFiles(params?: PublicListParams): Promise<ApiResponse<PublicListData>> {
-  return client.get('/api/file/public', { params }).then((res) => res.data);
+  const { signal, ...restParams } = params || {};
+  return client.get('/api/file/public', { params: restParams, signal }).then((res) => res.data);
 }
 
 /* ========== 公共空间文件夹列表 ========== */

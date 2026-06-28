@@ -56,3 +56,12 @@ func (r *UserRepo) UpdateUsedSize(userID int64, delta int64) error {
 	return r.DB.Model(&model.SysUser{}).Where("id = ?", userID).
 		Update("used_size", gorm.Expr("used_size + ?", delta)).Error
 }
+
+// SearchByKeyword 根据关键词搜索用户，排除指定ID
+func (r *UserRepo) SearchByKeyword(keyword string, excludeID int64, limit int) ([]model.SysUser, error) {
+	var users []model.SysUser
+	like := "%" + keyword + "%"
+	err := r.DB.Where("id != ? AND (username LIKE ? OR nickname LIKE ?)",
+		excludeID, like, like).Limit(limit).Find(&users).Error
+	return users, err
+}

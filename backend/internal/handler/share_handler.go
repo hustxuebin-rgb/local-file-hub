@@ -59,7 +59,7 @@ func (h *ShareHandler) MySharesHandler(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, shares)
+	response.Success(c, gin.H{"list": shares, "total": len(shares)})
 }
 
 // ReceivedSharesHandler 获取我收到的分享
@@ -72,7 +72,7 @@ func (h *ShareHandler) ReceivedSharesHandler(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, shares)
+	response.Success(c, gin.H{"list": shares, "total": len(shares)})
 }
 
 // ContentsHandler 获取分享内容详情
@@ -134,6 +134,25 @@ func (h *ShareHandler) CancelHandler(c *gin.Context) {
 	}
 
 	response.SuccessWithMsg(c, "分享已取消", nil)
+}
+
+// ViewersHandler 获取分享的查看者列表
+func (h *ShareHandler) ViewersHandler(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+
+	shareID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, response.CodeBadRequest, "参数格式错误")
+		return
+	}
+
+	viewers, err := h.ShareService.GetShareViewers(shareID, userID)
+	if err != nil {
+		handleShareError(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"list": viewers, "total": len(viewers)})
 }
 
 // BatchCreateShareReq 批量创建分享请求

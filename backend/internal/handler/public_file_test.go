@@ -20,7 +20,7 @@ import (
 func setupPublicFileTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	err = db.AutoMigrate(&model.FileInfo{}, &model.SysUser{})
+	err = db.AutoMigrate(&model.FileInfo{}, &model.SysUser{}, &model.UploadTask{})
 	require.NoError(t, err)
 	// 创建测试用户
 	db.Create(&model.SysUser{ID: 1, Username: "uploader1", Nickname: "上传者1", Password: "xxx", StorageRoot: "root1", Role: 2})

@@ -23,6 +23,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	folderRepo := &repository.FolderRepo{DB: db}
 	fileRepo := &repository.FileRepo{DB: db}
 	uploadTaskRepo := &repository.UploadTaskRepo{DB: db}
+	downloadTaskRepo := &repository.DownloadTaskRepo{DB: db}
 	operationLogRepo := &repository.OperationLogRepo{DB: db}
 	shareRepo := &repository.ShareRepo{DB: db}
 	favoriteRepo := &repository.FavoriteRepo{DB: db}
@@ -51,26 +52,36 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		MaxFileSize:    cfg.Storage.MaxUploadSize,
 	}
 
+	downloadService := &service.DownloadService{
+		DB:               db,
+		DownloadTaskRepo: downloadTaskRepo,
+		FileRepo:         fileRepo,
+	}
+
 	authHandler := &handler.AuthHandler{AuthService: authService}
 	deviceHandler := &handler.DeviceHandler{DeviceRepo: deviceRepo}
 	folderHandler := &handler.FolderHandler{
 		FolderRepo:     folderRepo,
 		UserRepo:       userRepo,
 		StorageService: storageService,
+		UploadTaskRepo: uploadTaskRepo,
 	}
 	fileHandler := &handler.FileHandler{
 		UploadService:    uploadService,
+		DownloadService:  downloadService,
 		FileRepo:         fileRepo,
 		StorageService:   storageService,
 		OperationLogRepo: operationLogRepo,
 		UserRepo:         userRepo,
+		UploadTaskRepo:   uploadTaskRepo,
 	}
 
 	shareService := &service.ShareService{
-		ShareRepo:  shareRepo,
-		FileRepo:   fileRepo,
-		FolderRepo: folderRepo,
-		UserRepo:   userRepo,
+		ShareRepo:        shareRepo,
+		FileRepo:         fileRepo,
+		FolderRepo:       folderRepo,
+		UserRepo:         userRepo,
+		OperationLogRepo: operationLogRepo,
 	}
 
 	shareHandler := &handler.ShareHandler{ShareService: shareService}
@@ -83,6 +94,15 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		UserRepo:     userRepo,
 	}
 	favoriteHandler := &handler.FavoriteHandler{FavoriteService: favoriteService}
+
+	friendRepo := &repository.FriendRepo{DB: db}
+
+	friendService := &service.FriendService{
+		FriendRepo: friendRepo,
+		UserRepo:   userRepo,
+	}
+
+	friendHandler := &handler.FriendHandler{FriendService: friendService}
 
 	storageHandler := &handler.StorageHandler{
 		StorageService:   storageService,
@@ -162,6 +182,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		folderGroup.GET("", folderHandler.ListFolders)
 		folderGroup.GET("/:id", folderHandler.GetFolder)
 		folderGroup.PUT("/:id", folderHandler.UpdateFolder)
+		folderGroup.PUT("/:id/visibility", folderHandler.UpdateFolderVisibility)
 		folderGroup.DELETE("/:id", folderHandler.DeleteFolder)
 		folderGroup.POST("/move", folderHandler.MoveFolder)
 		folderGroup.GET("/tree", folderHandler.GetTree)
@@ -177,10 +198,32 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 			uploadGroup.POST("/chunk", fileHandler.UploadChunk)
 			uploadGroup.POST("/merge", fileHandler.UploadMerge)
 			uploadGroup.POST("/cancel", fileHandler.UploadCancel)
+			uploadGroup.GET("/status", fileHandler.UploadStatus)
+			uploadGroup.POST("/pause", fileHandler.UploadPause)
+			uploadGroup.POST("/resume", fileHandler.UploadResume)
+			uploadGroup.GET("/unfinished", fileHandler.UploadUnfinished)
 		}
 
 		// 文件列表
 		fileGroup.GET("/list", fileHandler.List)
+
+		// 下载初始化
+		fileGroup.POST("/download/init", fileHandler.DownloadInit)
+
+		// 下载控制
+		fileGroup.GET("/download/status", fileHandler.DownloadStatus)
+		fileGroup.POST("/download/pause", fileHandler.DownloadPause)
+		fileGroup.POST("/download/resume", fileHandler.DownloadResume)
+		fileGroup.POST("/download/cancel", fileHandler.DownloadCancel)
+		fileGroup.GET("/download/list", fileHandler.DownloadList)
+
+		// 统一任务列表
+		fileGroup.GET("/tasks", fileHandler.TasksList)
+
+		// 任务中心
+		fileGroup.GET("/tasks/history", fileHandler.TasksHistory)
+		fileGroup.GET("/tasks/stats", fileHandler.TasksStats)
+		fileGroup.POST("/tasks/batch", fileHandler.TasksBatch)
 
 		// 文件操作
 		fileGroup.GET("/:id/info", fileHandler.Info)
@@ -209,6 +252,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		shareGroup.GET("/:id/contents", shareHandler.ContentsHandler)
 		shareGroup.PUT("/:id", shareHandler.UpdateHandler)
 		shareGroup.DELETE("/:id", shareHandler.CancelHandler)
+		shareGroup.GET("/:id/viewers", shareHandler.ViewersHandler)
 	}
 
 	// 用户管理（需admin权限）
@@ -241,6 +285,20 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		favoriteGroup.POST("", favoriteHandler.AddFavorite)
 		favoriteGroup.DELETE("", favoriteHandler.RemoveFavorite)
 		favoriteGroup.GET("/list", favoriteHandler.ListFavorites)
+	}
+
+	// 好友管理
+	friendGroup := r.Group("/api/friend")
+	{
+		friendGroup.GET("/search", friendHandler.SearchUserHandler)
+		friendGroup.POST("/request", friendHandler.SendRequestHandler)
+		friendGroup.GET("/requests/received", friendHandler.ReceivedRequestsHandler)
+		friendGroup.GET("/requests/sent", friendHandler.SentRequestsHandler)
+		friendGroup.POST("/request/:id/accept", friendHandler.AcceptRequestHandler)
+		friendGroup.POST("/request/:id/reject", friendHandler.RejectRequestHandler)
+		friendGroup.GET("/list", friendHandler.FriendListHandler)
+		friendGroup.DELETE("/:friendId", friendHandler.DeleteFriendHandler)
+		friendGroup.GET("/check/:userId", friendHandler.CheckFriendHandler)
 	}
 
 	// 公开文件（无需admin权限）

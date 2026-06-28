@@ -11,6 +11,7 @@ export default {
     'pages/create-share/index',
     'pages/favorites/index',
     'pages/operation-logs/index',
+    'pages/tasks/index',
   ],
   window: {
     navigationBarTitleText: '文件管理',

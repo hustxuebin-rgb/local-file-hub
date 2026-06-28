@@ -20,6 +20,7 @@ interface FolderPickerProps {
   value?: string;
   onChange?: (path: string) => void;
   placeholder?: string;
+  initialPath?: string;
 }
 
 interface BreadcrumbItem {
@@ -27,7 +28,7 @@ interface BreadcrumbItem {
   path: string;
 }
 
-function FolderPicker({ value, onChange, placeholder = '选择存储路径' }: FolderPickerProps): React.ReactNode {
+function FolderPicker({ value, onChange, placeholder = '选择存储路径', initialPath }: FolderPickerProps): React.ReactNode {
   const [currentPath, setCurrentPath] = useState<string>(value || '');
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
@@ -39,8 +40,16 @@ function FolderPicker({ value, onChange, placeholder = '选择存储路径' }: F
   const [newDirName, setNewDirName] = useState('');
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
-  // 初始化：获取挂载点列表
+  // 初始化：如果有 initialPath，直接浏览该路径；否则获取挂载点列表
   useEffect(() => {
+    if (initialPath) {
+      // 跳过挂载点选择，直接进入目录浏览
+      setSelectedPath(initialPath);
+      browsePath(initialPath);
+      setInitLoading(false);
+      return;
+    }
+    // 原有逻辑：获取挂载点列表
     const fetchMounts = async () => {
       setInitLoading(true);
       try {
@@ -56,7 +65,7 @@ function FolderPicker({ value, onChange, placeholder = '选择存储路径' }: F
       }
     };
     fetchMounts();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 浏览目录
   const browsePath = useCallback(async (path: string) => {
@@ -165,6 +174,9 @@ function FolderPicker({ value, onChange, placeholder = '选择存储路径' }: F
     }
   };
 
+  // 挂载点列表模式（初始状态）：无 initialPath 且无 currentPath
+  const isRootLevel = !initialPath && currentPath === '' && entries.length === 0;
+
   if (initLoading) {
     return (
       <div style={{ padding: 24, textAlign: 'center' }}>
@@ -172,9 +184,6 @@ function FolderPicker({ value, onChange, placeholder = '选择存储路径' }: F
       </div>
     );
   }
-
-  // 挂载点列表模式（初始状态）
-  const isRootLevel = currentPath === '' && entries.length === 0;
 
   return (
     <div

@@ -1,5 +1,5 @@
 import client from './client';
-import type { ApiResponse, ShareRecord } from '@/types';
+import type { ApiResponse, ShareRecord, ShareViewer } from '@/types';
 
 /* ========== 创建分享 ========== */
 
@@ -54,6 +54,17 @@ export function updateShare(id: number, data: UpdateShareReq): Promise<ApiRespon
 
 export function cancelShare(id: number): Promise<ApiResponse> {
   return client.delete(`/api/share/${id}`).then((res) => res.data);
+}
+
+/* ========== 分享查看者 ========== */
+
+interface ShareViewerListData {
+  list: ShareViewer[];
+  total: number;
+}
+
+export function getShareViewers(id: number): Promise<ApiResponse<ShareViewerListData>> {
+  return client.get(`/api/share/${id}/viewers`).then((res) => res.data);
 }
 
 /* ========== 批量分享 ========== */

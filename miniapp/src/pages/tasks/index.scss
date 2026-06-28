@@ -1,0 +1,126 @@
+.tasks-page {
+  min-height: 100%;
+  background: #f5f5f5;
+  padding-bottom: 32rpx;
+
+  &__section {
+    margin: 24rpx;
+    background: #ffffff;
+    border-radius: 16rpx;
+    overflow: hidden;
+  }
+
+  &__section-header {
+    display: flex;
+    align-items: center;
+    padding: 24rpx 28rpx 16rpx;
+    border-bottom: 2rpx solid #f0f0f0;
+
+    .section-icon {
+      font-size: 32rpx;
+      margin-right: 12rpx;
+    }
+
+    .section-title {
+      font-size: 30rpx;
+      font-weight: 600;
+      color: #333333;
+    }
+
+    .section-count {
+      margin-left: 12rpx;
+      font-size: 24rpx;
+      color: #999999;
+    }
+  }
+
+  &__task-item {
+    display: flex;
+    flex-direction: column;
+    padding: 24rpx 28rpx;
+    border-bottom: 2rpx solid #f5f5f5;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  &__task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12rpx;
+  }
+
+  &__task-name {
+    font-size: 28rpx;
+    color: #333333;
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__task-status {
+    font-size: 24rpx;
+    padding: 4rpx 16rpx;
+    border-radius: 20rpx;
+    flex-shrink: 0;
+    margin-left: 16rpx;
+
+    &--pending {
+      background: #f0f0f0;
+      color: #999999;
+    }
+
+    &--processing {
+      background: #e6f7ff;
+      color: #1677ff;
+    }
+
+    &--paused {
+      background: #fff7e6;
+      color: #fa8c16;
+    }
+
+    &--completed {
+      background: #f6ffed;
+      color: #52c41a;
+    }
+
+    &--failed {
+      background: #fff2f0;
+      color: #ff4d4f;
+    }
+
+    &--cancelled {
+      background: #f0f0f0;
+      color: #999999;
+    }
+  }
+
+  &__task-progress {
+    margin-bottom: 8rpx;
+  }
+
+  &__task-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 22rpx;
+    color: #999999;
+  }
+
+  &__loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 120rpx 0;
+  }
+
+  &__empty {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 120rpx 0;
+  }
+}

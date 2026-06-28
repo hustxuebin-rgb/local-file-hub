@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Card, Table, message, Button, Space, Tag, Breadcrumb, Empty, Tooltip } from 'antd';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import axios from 'axios';
+import { Card, Table, message, Button, Space, Tag, Breadcrumb, Empty } from 'antd';
 import type { TableProps } from 'antd';
 import {
   DownloadOutlined,
@@ -7,6 +8,7 @@ import {
   StarOutlined,
   StarFilled,
   FolderOutlined,
+  FileOutlined,
   HomeOutlined,
 } from '@ant-design/icons';
 import { listPublicFiles, listPublicFolders, addFavorite, removeFavorite } from '@/api';
@@ -18,7 +20,8 @@ import FileCategoryTabs from '@/components/shared/FileCategoryTabs';
 import FileSortDropdown from '@/components/shared/FileSortDropdown';
 import FileViewToggle from '@/components/shared/FileViewToggle';
 import FileGridView from '@/components/shared/FileGridView';
-import type { PublicFile, PublicFolder, SortOption } from '@/types';
+import type { GridFileItem } from '@/components/shared/FileGridView';
+import type { PublicFile, PublicFolder, SortOption, PublicListItem } from '@/types';
 
 function formatFileSize(size: number): string {
   if (size < 1024) return `${size} B`;
@@ -33,10 +36,25 @@ interface BreadcrumbItem {
   name: string;
 }
 
+/** 递归展平文件夹树结构为扁平数组 */
+function flattenFolderTree(folders: PublicFolder[]): PublicFolder[] {
+  const result: PublicFolder[] = [];
+  const walk = (list: PublicFolder[]) => {
+    for (const f of list) {
+      result.push(f);
+      if (f.children && f.children.length > 0) {
+        walk(f.children);
+      }
+    }
+  };
+  walk(folders);
+  return result;
+}
+
 function PublicSpace(): React.ReactNode {
   const { viewMode } = useViewStore();
   const [files, setFiles] = useState<PublicFile[]>([]);
-  const [total, setTotal] = useState(0);
+  const [fileTotal, setFileTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [categoryKey, setCategoryKey] = useState('all');
@@ -52,28 +70,35 @@ function PublicSpace(): React.ReactNode {
   const [publicFolders, setPublicFolders] = useState<PublicFolder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(false);
 
+  const fetchAbortRef = useRef<AbortController | null>(null);
+
   const fetchData = useCallback(async () => {
+    // 竞态防护：取消上一次未完成的请求
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
+
     setLoading(true);
     try {
       const res = await listPublicFiles({
         keyword: keyword || undefined,
         fileType,
-        sortBy:
-          sort.field === 'name'
-            ? 'fileName'
-            : sort.field === 'fileSize'
-              ? 'fileSize'
-              : 'createTime',
+        sortBy: sort.field,
         sortOrder: sort.order,
         page,
         pageSize,
         folderId: currentFolderId ?? undefined,
+        signal: controller.signal,
       });
       if (res.data) {
         setFiles(res.data.list);
-        setTotal(res.data.total);
+        setFileTotal(res.data.total);
       }
     } catch (err: unknown) {
+      // 忽略取消请求的错误
+      if (axios.isCancel(err)) {
+        return;
+      }
       const typedErr = err as { response?: { data?: { code?: number } } };
       message.error(getErrorMessage(typedErr.response?.data?.code));
     } finally {
@@ -87,10 +112,10 @@ function PublicSpace(): React.ReactNode {
     try {
       const res = await listPublicFolders();
       if (res.data) {
-        // 过滤当前层级下的子文件夹
-        const filtered = currentFolderId === null
-          ? res.data.filter((f) => f.parentId === 0)
-          : res.data.filter((f) => f.parentId === currentFolderId);
+        // 先展平树结构，再按 parentId 过滤当前层级
+        const flat = flattenFolderTree(res.data);
+        const parentId = currentFolderId ?? 0;
+        const filtered = flat.filter((f) => f.parentId === parentId);
         setPublicFolders(filtered);
       }
     } catch {
@@ -108,6 +133,50 @@ function PublicSpace(): React.ReactNode {
   useEffect(() => {
     fetchFolders();
   }, [fetchFolders]);
+
+  // 组件卸载时清理未完成的请求
+  useEffect(() => {
+    return () => {
+      fetchAbortRef.current?.abort();
+    };
+  }, []);
+
+  /** 合并子文件夹与文件为统一列表 */
+  const mergedList = useMemo<PublicListItem[]>(() => {
+    const folderItems: PublicListItem[] = publicFolders.map((f) => ({
+      itemType: 'folder' as const,
+      id: f.id,
+      name: f.folderName,
+      fileType: 6,
+      fileSize: 0,
+      createTime: '',
+      uploaderName: f.uploaderName,
+      folderData: f,
+    }));
+    const fileItems: PublicListItem[] = files.map((f) => ({
+      itemType: 'file' as const,
+      id: f.id,
+      name: f.fileName,
+      fileType: f.fileType,
+      fileSize: f.fileSize,
+      fileSuffix: f.fileSuffix,
+      createTime: f.createTime,
+      uploaderName: f.uploaderName,
+      mimeType: f.mimeType,
+    }));
+    if (fileType !== undefined) {
+      return fileItems;
+    }
+    return [...folderItems, ...fileItems];
+  }, [publicFolders, files, fileType]);
+
+  /** 分页 total：全部 Tab 时加上当前层级文件夹数 */
+  const total = useMemo(() => {
+    if (fileType === undefined) {
+      return fileTotal + publicFolders.length;
+    }
+    return fileTotal;
+  }, [fileTotal, publicFolders.length, fileType]);
 
   const handleSearch = useCallback((kw: string) => {
     setKeyword(kw);
@@ -195,15 +264,20 @@ function PublicSpace(): React.ReactNode {
     setPage(1);
   };
 
-  const columns: TableProps<PublicFile>['columns'] = [
+  const columns: TableProps<PublicListItem>['columns'] = [
     {
       title: '文件名',
-      dataIndex: 'fileName',
-      key: 'fileName',
-      render: (name: string, record: PublicFile) => (
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string, record: PublicListItem) => (
         <Space>
-          <Tag>{record.fileSuffix}</Tag>
-          <span>{name}</span>
+          {record.itemType === 'folder' ? <FolderOutlined /> : <FileOutlined />}
+          <span style={{ cursor: record.itemType === 'folder' ? 'pointer' : 'default' }}>{name}</span>
+          {record.itemType === 'folder' ? (
+            <Tag color="processing">文件夹</Tag>
+          ) : (
+            <Tag>{record.fileSuffix}</Tag>
+          )}
         </Space>
       ),
     },
@@ -212,7 +286,8 @@ function PublicSpace(): React.ReactNode {
       dataIndex: 'fileType',
       key: 'fileType',
       width: 100,
-      render: (type: number) => {
+      render: (_type: number, record: PublicListItem) => {
+        if (record.itemType === 'folder') return '文件夹';
         const typeMap: Record<number, string> = {
           1: '图片',
           2: '视频',
@@ -220,7 +295,7 @@ function PublicSpace(): React.ReactNode {
           4: '文档',
           5: '其他',
         };
-        return typeMap[type] ?? '其他';
+        return typeMap[record.fileType] ?? '其他';
       },
     },
     {
@@ -228,64 +303,79 @@ function PublicSpace(): React.ReactNode {
       dataIndex: 'fileSize',
       key: 'fileSize',
       width: 120,
-      render: (size: number) => formatFileSize(size),
+      render: (_size: number, record: PublicListItem) => {
+        if (record.itemType === 'folder') return '-';
+        return formatFileSize(record.fileSize);
+      },
     },
     {
       title: '上传者',
       dataIndex: 'uploaderName',
       key: 'uploaderName',
       width: 120,
-      render: (name?: string) => name || '-',
+      render: (_name: string, record: PublicListItem) => {
+        if (record.itemType === 'folder') return record.folderData?.uploaderName || '-';
+        return record.uploaderName || '-';
+      },
     },
     {
       title: '上传时间',
       dataIndex: 'createTime',
       key: 'createTime',
       width: 180,
+      render: (_time: string, record: PublicListItem) => {
+        if (record.itemType === 'folder') return '-';
+        return record.createTime;
+      },
     },
     {
       title: '操作',
       key: 'action',
       width: 220,
-      render: (_: unknown, record: PublicFile) => (
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<DownloadOutlined />}
-            onClick={() => handleDownload(record)}
-          >
-            下载
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => handlePreview(record)}
-          >
-            预览
-          </Button>
-          {favoritedIds.has(record.id) ? (
+      render: (_: unknown, record: PublicListItem) => {
+        if (record.itemType === 'folder') {
+          return <span style={{ color: '#999' }}>进入文件夹查看</span>;
+        }
+        return (
+          <Space>
             <Button
               type="link"
               size="small"
-              icon={<StarFilled />}
-              onClick={() => handleRemoveFavorite(record)}
+              icon={<DownloadOutlined />}
+              onClick={() => handleDownload(record as unknown as PublicFile)}
             >
-              已收藏
+              下载
             </Button>
-          ) : (
             <Button
               type="link"
               size="small"
-              icon={<StarOutlined />}
-              onClick={() => handleFavorite(record)}
+              icon={<EyeOutlined />}
+              onClick={() => handlePreview(record as unknown as PublicFile)}
             >
-              收藏
+              预览
             </Button>
-          )}
-        </Space>
-      ),
+            {favoritedIds.has(record.id) ? (
+              <Button
+                type="link"
+                size="small"
+                icon={<StarFilled />}
+                onClick={() => handleRemoveFavorite(record as unknown as PublicFile)}
+              >
+                已收藏
+              </Button>
+            ) : (
+              <Button
+                type="link"
+                size="small"
+                icon={<StarOutlined />}
+                onClick={() => handleFavorite(record as unknown as PublicFile)}
+              >
+                收藏
+              </Button>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -317,60 +407,6 @@ function PublicSpace(): React.ReactNode {
         />
       </div>
 
-      {/* 子文件夹区域 */}
-      {publicFolders.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 500,
-              marginBottom: 12,
-              color: '#555',
-            }}
-          >
-            文件夹
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            {publicFolders.map((folder) => (
-              <Card
-                key={folder.id}
-                hoverable
-                size="small"
-                style={{ width: 180, cursor: 'pointer' }}
-                onClick={() => handleEnterFolder(folder)}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                >
-                  <FolderOutlined style={{ fontSize: 24, color: '#faad14' }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Tooltip title={folder.folderName}>
-                      <div
-                        style={{
-                          fontWeight: 500,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {folder.folderName}
-                      </div>
-                    </Tooltip>
-                    <div style={{ fontSize: 11, color: '#999' }}>
-                      {folder.uploaderName || '-'}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* 文件操作区 */}
       <div
         style={{
@@ -388,10 +424,10 @@ function PublicSpace(): React.ReactNode {
       <FileCategoryTabs activeKey={categoryKey} onChange={handleCategoryChange} />
 
       {viewMode === 'list' ? (
-        <Table<PublicFile>
-          rowKey="id"
+        <Table<PublicListItem>
+          rowKey={(record) => `${record.itemType}-${record.id}`}
           columns={columns}
-          dataSource={files}
+          dataSource={mergedList}
           loading={loading}
           pagination={{
             current: page,
@@ -402,10 +438,16 @@ function PublicSpace(): React.ReactNode {
             },
             showSizeChanger: false,
           }}
+          onRow={(record: PublicListItem) => ({
+            style: { cursor: record.itemType === 'folder' ? 'pointer' : 'default' },
+            onDoubleClick: record.itemType === 'folder' && record.folderData ? () => {
+              handleEnterFolder(record.folderData!);
+            } : undefined,
+          })}
         />
       ) : (
         <FileGridView
-          files={files}
+          files={mergedList as unknown as GridFileItem[]}
           loading={loading}
           showUploader
           onDownload={(file) => handleDownload(file as PublicFile)}
@@ -415,7 +457,7 @@ function PublicSpace(): React.ReactNode {
       )}
 
       {/* 空状态：无文件夹且无文件 */}
-      {!loading && !foldersLoading && publicFolders.length === 0 && files.length === 0 && (
+      {!loading && !foldersLoading && mergedList.length === 0 && (
         <Empty description="暂无内容" />
       )}
     </Card>

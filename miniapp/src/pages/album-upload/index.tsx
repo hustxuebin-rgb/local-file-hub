@@ -4,14 +4,24 @@ import { useState, useCallback } from 'react';
 import Taro from '@tarojs/taro';
 import { Button, Loading, Progress } from '@nutui/nutui-react-taro';
 import { getApiBaseUrl, STORAGE_KEYS } from '../../utils/config';
+import { chunkedUpload } from '../../utils/upload';
 import './index.scss';
+
+const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024; // 10MB
 
 interface AlbumUploadProps {}
 
+interface MediaItem {
+  path: string;
+  size: number;
+  type: string;
+}
+
 function AlbumUploadPage(_props: AlbumUploadProps): JSX.Element {
-  const [mediaList, setMediaList] = useState<{ path: string; size: number; type: string }[]>([]);
+  const [mediaList, setMediaList] = useState<MediaItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [chunkInfo, setChunkInfo] = useState('');
 
   const handleChooseMedia = useCallback(async () => {
     try {
@@ -38,21 +48,49 @@ function AlbumUploadPage(_props: AlbumUploadProps): JSX.Element {
     }
     setUploading(true);
     setProgress(0);
+    setChunkInfo('');
+
+    const token: string = Taro.getStorageSync(STORAGE_KEYS.TOKEN);
+    const total = mediaList.length;
+
     try {
-      for (let i = 0; i < mediaList.length; i++) {
-        await Taro.uploadFile({
-          url: `${getApiBaseUrl()}/api/miniapp/album_upload`,
-          filePath: mediaList[i].path,
-          name: 'file',
-          header: {
-            Authorization: `Bearer ${Taro.getStorageSync(STORAGE_KEYS.TOKEN)}`,
-          },
-        });
-        setProgress(((i + 1) / mediaList.length) * 100);
+      for (let i = 0; i < total; i++) {
+        const file = mediaList[i];
+        const fileName = file.path.split('/').pop() || `file_${i}`;
+
+        if (file.size >= LARGE_FILE_THRESHOLD) {
+          // 大文件：分片上传
+          await chunkedUpload({
+            filePath: file.path,
+            fileName,
+            fileSize: file.size,
+            token,
+            onProgress: (chunkPercent: number, currentChunk: number, totalChunks: number) => {
+              // 总体进度 = 已完成文件进度 + 当前文件分片进度
+              const overallProgress = ((i + chunkPercent / 100) / total) * 100;
+              setProgress(overallProgress);
+              setChunkInfo(`上传中：第 ${currentChunk}/${totalChunks} 片`);
+            },
+          });
+          setChunkInfo('');
+        } else {
+          // 小文件：保持现有简单上传
+          await Taro.uploadFile({
+            url: `${getApiBaseUrl()}/api/miniapp/album_upload`,
+            filePath: file.path,
+            name: 'file',
+            header: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          setProgress(((i + 1) / total) * 100);
+        }
       }
+
       Taro.showToast({ title: '上传成功', icon: 'success' });
       setMediaList([]);
       setProgress(0);
+      setChunkInfo('');
     } catch {
       Taro.showToast({ title: '上传失败', icon: 'none' });
     } finally {
@@ -118,6 +156,9 @@ function AlbumUploadPage(_props: AlbumUploadProps): JSX.Element {
             <Text className="album-upload-page__progress-text">
               上传中 {Math.round(progress)}%
             </Text>
+            {chunkInfo && (
+              <Text className="album-upload-page__chunk-info">{chunkInfo}</Text>
+            )}
           </View>
         )}
 

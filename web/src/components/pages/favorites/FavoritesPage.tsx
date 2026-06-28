@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Space, Tag, message, Popconfirm, Segmented } from 'antd';
 import type { TableProps } from 'antd';
 import { StarFilled, EyeOutlined } from '@ant-design/icons';
 import { useFavoriteStore } from '@/stores/useFavoriteStore';
 import { useViewStore } from '@/stores/useViewStore';
 import { removeFavorite } from '@/api';
+import { previewFile } from '@/api/file';
 import { getErrorMessage } from '@/utils/errorCodes';
 import FileViewToggle from '@/components/shared/FileViewToggle';
 import FileSearchBar from '@/components/shared/FileSearchBar';
@@ -33,6 +35,7 @@ const categoryOptions = [
 ];
 
 function FavoritesPage(): React.ReactNode {
+  const navigate = useNavigate();
   const { viewMode } = useViewStore();
   const { favorites, total, loading, fetchFavorites } = useFavoriteStore();
   const [page, setPage] = useState(1);
@@ -89,15 +92,32 @@ function FavoritesPage(): React.ReactNode {
     }
   }, [fetchFavorites, page, pageSize, keyword, targetType]);
 
-  const handleView = useCallback((record: Favorite) => {
+  const handleView = useCallback(async (record: Favorite) => {
+    if (record.targetType === 1) {
+      try {
+        const blob = await previewFile(record.targetId);
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (err: unknown) {
+        const typedErr = err as { response?: { data?: { code?: number } } };
+        message.error(getErrorMessage(typedErr.response?.data?.code));
+      }
+      return;
+    }
+    if (record.targetType === 2) {
+      if (record.folderIsPublic === 1) {
+        navigate('/public');
+      } else {
+        navigate('/files');
+      }
+      return;
+    }
     if (record.targetType === 3) {
       message.info('分享查看功能开发中');
       return;
     }
-    // 文件/文件夹: 有 thumbnail 链接可以打开
-    const thumbnailUrl = `/api/media/thumbnail/${record.targetId}`;
-    window.open(thumbnailUrl, '_blank');
-  }, []);
+  }, [navigate]);
 
   const columns: TableProps<Favorite>['columns'] = [
     {
@@ -168,6 +188,7 @@ function FavoritesPage(): React.ReactNode {
     mimeType: '',
     md5: '',
     fullPath: '',
+    visibility: 0,
     isDelete: 0,
     createTime: f.createTime,
     uploaderName: f.ownerName,

@@ -5,6 +5,10 @@ import UserCenterLayout from '@/components/layout/UserCenterLayout';
 import AdminLayout from '@/components/layout/AdminLayout';
 import LoginPage from '@/components/pages/login/LoginPage';
 import FileManager from '@/components/pages/files/FileManager';
+import FriendLayout from '@/components/layout/FriendLayout';
+import FriendListPage from '@/components/pages/friends/FriendListPage';
+import AddFriendPage from '@/components/pages/friends/AddFriendPage';
+import FriendRequestsPage from '@/components/pages/friends/FriendRequestsPage';
 import UploadPage from '@/components/pages/upload/UploadPage';
 import ShareMyPage from '@/components/pages/share/ShareMyPage';
 import ShareReceivedPage from '@/components/pages/share/ShareReceivedPage';
@@ -19,6 +23,7 @@ import StoragePage from '@/components/pages/center/StoragePage';
 import PublicSpace from '@/components/pages/public/PublicSpace';
 import FavoritesPage from '@/components/pages/favorites/FavoritesPage';
 import OperationLogsPage from '@/components/pages/logs/OperationLogsPage';
+import TaskCenterPage from '@/components/pages/tasks/TaskCenterPage';
 
 /**
  * 应用路由定义
@@ -38,6 +43,14 @@ function AppRoutes(): React.ReactNode {
           <Route index element={<Navigate to="/user-center/profile" replace />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="storage" element={<StoragePage />} />
+        </Route>
+
+        {/* 好友中心 - 独立页面 */}
+        <Route path="friends" element={<FriendLayout />}>
+          <Route index element={<Navigate to="/friends/list" replace />} />
+          <Route path="list" element={<FriendListPage />} />
+          <Route path="add" element={<AddFriendPage />} />
+          <Route path="requests" element={<FriendRequestsPage />} />
         </Route>
 
         {/* 后台管理 - 独立页面 */}
@@ -60,6 +73,7 @@ function AppRoutes(): React.ReactNode {
           <Route path="share/my" element={<ShareMyPage />} />
           <Route path="share/received" element={<ShareReceivedPage />} />
           <Route path="recycle" element={<RecyclePage />} />
+          <Route path="tasks" element={<TaskCenterPage />} />
         </Route>
 
         {/* 默认重定向到文件管理 */}

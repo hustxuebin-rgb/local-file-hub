@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Descriptions, Empty, Form, Input, InputNumber, Select, Button, Space, Popconfirm, Modal, message, Tag, Spin } from 'antd';
 import { SyncOutlined, ReloadOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
-import { getDiskInfo, getSyncTask, updateSyncTask, manualSync, createDisk, updateDisk, deleteDisk } from '@/api';
+import { getDiskInfo, getSyncTask, updateSyncTask, manualSync, createDisk, updateDisk, deleteDisk, scanMounts } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
-import type { DiskInfo, SyncTask } from '@/types';
+import type { DiskInfo, SyncTask, MountInfo } from '@/types';
 import FolderPicker from '@/components/shared/FolderPicker';
 
 function DiskManagePage(): React.ReactNode {
@@ -18,6 +18,10 @@ function DiskManagePage(): React.ReactNode {
   const [editingDisk, setEditingDisk] = useState<DiskInfo | null>(null);
   const [diskForm] = Form.useForm();
   const [diskSubmitting, setDiskSubmitting] = useState(false);
+  const [diskStep, setDiskStep] = useState<1 | 2 | 3>(1);
+  const [mountList, setMountList] = useState<MountInfo[]>([]);
+  const [mountLoading, setMountLoading] = useState(false);
+  const [selectedMount, setSelectedMount] = useState<string>('');
 
   const fetchData = async () => {
     setLoading(true);
@@ -73,13 +77,28 @@ function DiskManagePage(): React.ReactNode {
   const handleDiskAdd = () => {
     setEditingDisk(null);
     diskForm.resetFields();
+    setDiskStep(1);
+    setSelectedMount('');
+    setMountList([]);
     setDiskModalOpen(true);
   };
 
-  const handleDiskEdit = (disk: DiskInfo) => {
+  const handleDiskEdit = async (disk: DiskInfo) => {
     setEditingDisk(disk);
     diskForm.setFieldsValue(disk);
+    setSelectedMount(disk.diskPath);
+    setDiskStep(3);
     setDiskModalOpen(true);
+    // 预加载挂载点列表，以便用户在步骤 3 点击「上一步」回到步骤 2 时有可选挂载点
+    setMountLoading(true);
+    try {
+      const res = await scanMounts();
+      if (res.data) setMountList(res.data);
+    } catch {
+      // 忽略加载失败，步骤 2 会处理空状态
+    } finally {
+      setMountLoading(false);
+    }
   };
 
   const handleDiskDelete = async (id: number) => {
@@ -197,40 +216,138 @@ function DiskManagePage(): React.ReactNode {
       <Modal
         title={editingDisk ? '编辑磁盘' : '添加磁盘'}
         open={diskModalOpen}
-        onOk={handleDiskSubmit}
+        onOk={diskStep === 3 ? handleDiskSubmit : undefined}
         onCancel={() => {
           setDiskModalOpen(false);
           diskForm.resetFields();
+          setDiskStep(1);
+          setSelectedMount('');
+          setMountList([]);
         }}
         confirmLoading={diskSubmitting}
+        footer={diskStep === 3 ? undefined : null}
       >
         <Form form={diskForm} layout="vertical">
-          <Form.Item name="diskPath" label="磁盘路径" rules={[{ required: true, message: '请选择磁盘路径' }]}>
-            <FolderPicker placeholder="选择存储路径" />
-          </Form.Item>
-          <Form.Item name="diskType" label="磁盘类型" rules={[{ required: true, message: '请选择磁盘类型' }]}>
-            <Select
-              options={[
-                { value: 0, label: '本地' },
-                { value: 1, label: 'NAS' },
-                { value: 2, label: '云存储' },
-              ]}
-            />
-          </Form.Item>
-          {editingDisk && (
-            <Form.Item name="status" label="磁盘状态">
-              <Select
-                options={[
-                  { value: 0, label: '离线' },
-                  { value: 1, label: '正常' },
-                  { value: 2, label: '异常' },
-                ]}
-              />
-            </Form.Item>
+          {/* 步骤 1：选择磁盘类型 */}
+          {diskStep === 1 && (
+            <>
+              <div style={{ marginBottom: 16, color: '#666', fontSize: 13 }}>
+                步骤 1/3：选择磁盘类型
+              </div>
+              <Form.Item name="diskType" label="磁盘类型" rules={[{ required: true, message: '请选择磁盘类型' }]}>
+                <Select
+                  placeholder="请选择磁盘类型"
+                  options={[
+                    { value: 0, label: '本地' },
+                    { value: 1, label: 'NAS' },
+                    { value: 2, label: '云存储' },
+                  ]}
+                />
+              </Form.Item>
+              <Button
+                type="primary"
+                loading={mountLoading}
+                onClick={async () => {
+                  try {
+                    await diskForm.validateFields(['diskType']);
+                  } catch { return; }
+                  setMountLoading(true);
+                  try {
+                    const res = await scanMounts();
+                    if (res.data) setMountList(res.data);
+                  } catch (err: unknown) {
+                    const typedErr = err as { response?: { data?: { code?: number } } };
+                    message.error(getErrorMessage(typedErr.response?.data?.code));
+                    return;
+                  } finally {
+                    setMountLoading(false);
+                  }
+                  setDiskStep(2);
+                }}
+              >
+                下一步
+              </Button>
+            </>
           )}
-          <Form.Item name="remark" label="备注">
-            <Input placeholder="可选备注" />
-          </Form.Item>
+
+          {/* 步骤 2：选择磁盘（挂载点） */}
+          {diskStep === 2 && (
+            <>
+              <div style={{ marginBottom: 16, color: '#666', fontSize: 13 }}>
+                步骤 2/3：选择磁盘
+              </div>
+              {mountLoading ? (
+                <Spin />
+              ) : (
+                <Select
+                  style={{ width: '100%' }}
+                  placeholder="请选择磁盘"
+                  value={selectedMount || undefined}
+                  onChange={(value) => setSelectedMount(value)}
+                  options={mountList.map((m) => ({
+                    value: m.mountPoint,
+                    label: (
+                      <div>
+                        <div style={{ fontWeight: 500 }}>{m.mountPoint}</div>
+                        <div style={{ fontSize: 11, color: '#999' }}>
+                          {m.fsType} · {m.device}
+                        </div>
+                      </div>
+                    ),
+                  }))}
+                  notFoundContent={mountList.length === 0 ? '未发现可用磁盘，请检查磁盘连接' : undefined}
+                />
+              )}
+              <div style={{ marginTop: 16 }}>
+                <Button onClick={() => setDiskStep(1)} style={{ marginRight: 8 }}>
+                  上一步
+                </Button>
+                <Button
+                  type="primary"
+                  disabled={!selectedMount}
+                  onClick={() => {
+                    if (!selectedMount) { message.warning('请选择磁盘'); return; }
+                    diskForm.setFieldsValue({ diskPath: selectedMount });
+                    setDiskStep(3);
+                  }}
+                >
+                  下一步
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* 步骤 3：选择存储路径 */}
+          {diskStep === 3 && (
+            <>
+              <div style={{ marginBottom: 16, color: '#666', fontSize: 13 }}>
+                步骤 3/3：选择存储路径
+              </div>
+              <Form.Item name="diskPath" label="磁盘路径" rules={[{ required: true, message: '请选择存储路径' }]}>
+                <FolderPicker
+                  placeholder="在选定磁盘中选择存储路径"
+                  initialPath={selectedMount}
+                />
+              </Form.Item>
+              {editingDisk && (
+                <Form.Item name="status" label="磁盘状态">
+                  <Select
+                    options={[
+                      { value: 0, label: '离线' },
+                      { value: 1, label: '正常' },
+                      { value: 2, label: '异常' },
+                    ]}
+                  />
+                </Form.Item>
+              )}
+              <Form.Item name="remark" label="备注">
+                <Input placeholder="可选备注" />
+              </Form.Item>
+              <div style={{ marginTop: 16 }}>
+                <Button onClick={() => setDiskStep(2)}>上一步</Button>
+              </div>
+            </>
+          )}
         </Form>
       </Modal>
       <Card

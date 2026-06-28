@@ -57,7 +57,7 @@ export interface FileInfo {
   fullPath: string;
   thumbnailPath?: string;
   sourceDevice?: number;
-  visibility?: number;
+  visibility: number;
   isDelete: number;
   deleteTime?: string;
   createTime: string;
@@ -80,6 +80,13 @@ export interface ShareRecord {
   resourceName?: string;
 }
 
+/** 分享查看者 */
+export interface ShareViewer {
+  userId: number;
+  userName: string;
+  viewTime: string;
+}
+
 export interface UploadTask {
   id: number;
   taskId: string;
@@ -88,6 +95,36 @@ export interface UploadTask {
   totalChunk: number;
   finishedChunk: number;
   status: number;
+}
+
+/** 全局上传任务（用于 useTaskStore） */
+export interface UploadTaskItem {
+  id: string;
+  taskId: string;
+  fileName: string;
+  filePath?: string;
+  totalSize: number;
+  totalChunk: number;
+  finishedChunk: number;
+  folderId: number;
+  visibility: number;
+  status: 'pending' | 'uploading' | 'paused' | 'done' | 'error' | 'skipped';
+  progress: number;
+  createTime: string;
+}
+
+/** 全局下载任务（用于 useTaskStore） */
+export interface DownloadTaskItem {
+  id: string;
+  taskId: string;
+  fileId: number;
+  fileName: string;
+  filePath?: string;
+  totalSize: number;
+  downloadedSize: number;
+  status: 'idle' | 'downloading' | 'paused' | 'done' | 'error';
+  progress: number;
+  createTime: string;
 }
 
 export interface DiskInfo {
@@ -130,6 +167,19 @@ export interface OperationLog {
   operDesc: string;
   localIp: string;
   createTime: string;
+}
+
+// ========== 任务统计 ==========
+
+export interface TaskStatItem {
+  count: number;
+  totalSize: number;
+  avgSpeed: number;
+}
+
+export interface TaskStats {
+  upload: TaskStatItem;
+  download: TaskStatItem;
 }
 
 export interface MountInfo {
@@ -177,6 +227,7 @@ export interface Favorite {
   targetSize: number;
   ownerName: string;
   createTime: string;
+  folderIsPublic?: number;
 }
 
 // ========== 公共文件（含上传者） ==========
@@ -196,6 +247,37 @@ export interface PublicFolder {
   children?: PublicFolder[];
 }
 
+// ========== 好友 ==========
+
+export interface FriendInfo {
+  friendId: number;
+  username: string;
+  nickname: string;
+  avatarUrl?: string;
+  createTime: string;
+}
+
+export interface FriendRequestInfo {
+  id: number;
+  fromUserId: number;
+  fromUserName: string;
+  fromUserAvatar?: string;
+  toUserId: number;
+  toUserName?: string;
+  message: string;
+  status: number; // 0=待处理, 1=已同意, 2=已拒绝
+  createTime: string;
+}
+
+export interface SearchUserItem {
+  id: number;
+  username: string;
+  nickname: string;
+  avatarUrl?: string;
+  isFriend: boolean;
+  hasPendingRequest: boolean;
+}
+
 // ========== 视图模式 ==========
 
 export type ViewMode = 'list' | 'grid';
@@ -213,4 +295,26 @@ export interface FileCategory {
   key: string;
   label: string;
   fileType?: number;
+}
+
+// ========== 统一列表项（文件夹+文件合并） ==========
+
+/** FileManager 统一列表项：文件夹或文件 */
+export interface ListItem extends FileInfo {
+  itemType: 'file' | 'folder';
+  folderData?: Folder;
+}
+
+/** PublicSpace 统一列表项：公共文件夹或公共文件 */
+export interface PublicListItem {
+  itemType: 'file' | 'folder';
+  id: number;
+  name: string;
+  fileType: number;
+  fileSize: number;
+  fileSuffix?: string;
+  createTime: string;
+  uploaderName?: string;
+  mimeType?: string;
+  folderData?: PublicFolder;
 }

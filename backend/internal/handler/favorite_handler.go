@@ -40,6 +40,11 @@ func (h *FavoriteHandler) AddFavorite(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 
 	if err := h.FavoriteService.AddFavorite(userID, req.TargetType, req.TargetID); err != nil {
+		// 重复收藏返回友好提示而非错误码
+		if errors.Is(err, service.ErrFavoriteAlreadyExists) {
+			response.SuccessWithMsg(c, "已收藏", nil)
+			return
+		}
 		handleFavoriteError(c, err)
 		return
 	}

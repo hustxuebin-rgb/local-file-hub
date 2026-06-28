@@ -115,7 +115,8 @@ func TestAddFavorite_AlreadyExists(t *testing.T) {
 	assert.Equal(t, 200, w2.Code)
 	var resp response.Response
 	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &resp))
-	assert.Equal(t, 400, resp.Code)
+	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, "已收藏", resp.Msg)
 }
 
 func TestAddFavorite_InvalidTargetType(t *testing.T) {
