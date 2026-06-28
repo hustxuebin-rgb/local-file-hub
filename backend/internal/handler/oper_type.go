@@ -10,4 +10,5 @@ const (
 	OperTypeHardDelete int8 = 8  // 彻底删除文件
 	OperTypeVisibility int8 = 9  // 切换可见性
 	OperTypeDiskSync   int8 = 10 // 磁盘同步
+	OperTypeShareView  int8 = 11 // 查看分享内容
 )

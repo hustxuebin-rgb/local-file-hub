@@ -32,14 +32,16 @@ func (r *FileRepo) FindByUserAndFolder(userID, folderID int64, visibility *int8,
 	var files []model.FileInfo
 	var total int64
 
-	query := r.DB.Model(&model.FileInfo{}).Where("user_id = ? AND folder_id = ? AND is_delete = 0", userID, folderID)
+	var query *gorm.DB
+	if keyword != "" {
+		query = r.DB.Model(&model.FileInfo{}).Where("user_id = ? AND is_delete = 0", userID)
+		query = query.Where("file_name LIKE ?", "%"+keyword+"%")
+	} else {
+		query = r.DB.Model(&model.FileInfo{}).Where("user_id = ? AND folder_id = ? AND is_delete = 0", userID, folderID)
+	}
 
 	if visibility != nil {
 		query = query.Where("visibility = ?", *visibility)
-	}
-
-	if keyword != "" {
-		query = query.Where("file_name LIKE ?", "%"+keyword+"%")
 	}
 
 	if fileType != nil {
@@ -120,22 +122,26 @@ func (r *FileRepo) UpdateVisibility(id int64, visibility int8) error {
 }
 
 // FindPublicFiles 查询所有用户公开且未删除的文件（分页，支持过滤和排序）
+// 公共空间只展示上传到公共文件夹的内容（upload_task.visibility=1），兼容旧数据（task_id IS NULL）
 func (r *FileRepo) FindPublicFiles(folderID int64, keyword string, fileType *int8, sortBy string, sortOrder string, offset, limit int) ([]model.FileInfo, int64, error) {
 	var files []model.FileInfo
 	var total int64
 
-	query := r.DB.Model(&model.FileInfo{}).Where("visibility = 1 AND is_delete = 0")
+	query := r.DB.Model(&model.FileInfo{}).
+		Joins("LEFT JOIN upload_task ON file_info.task_id = upload_task.task_id").
+		Where("file_info.visibility = 1 AND file_info.is_delete = 0").
+		Where("(file_info.task_id IS NULL OR upload_task.visibility = 1)")
 
 	if folderID > 0 {
-		query = query.Where("folder_id = ?", folderID)
+		query = query.Where("file_info.folder_id = ?", folderID)
 	}
 
 	if keyword != "" {
-		query = query.Where("file_name LIKE ?", "%"+keyword+"%")
+		query = query.Where("file_info.file_name LIKE ?", "%"+keyword+"%")
 	}
 
 	if fileType != nil {
-		query = query.Where("file_type = ?", *fileType)
+		query = query.Where("file_info.file_type = ?", *fileType)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -155,19 +161,19 @@ func (r *FileRepo) SumSizeByUser(userID int64) (int64, error) {
 	return total, err
 }
 
-// buildOrderClause 构建排序子句
+// buildOrderClause 构建排序子句（统一使用 file_info 表前缀避免 JOIN 时歧义）
 func buildOrderClause(sortBy, sortOrder string) string {
 	// 白名单校验，防止 SQL 注入
 	validSortBy := map[string]string{
-		"name":       "file_name",
-		"fileSize":   "file_size",
-		"fileType":   "file_type",
-		"createTime": "create_time",
+		"name":       "file_info.file_name",
+		"fileSize":   "file_info.file_size",
+		"fileType":   "file_info.file_type",
+		"createTime": "file_info.create_time",
 	}
 
 	col, ok := validSortBy[sortBy]
 	if !ok {
-		col = "create_time"
+		col = "file_info.create_time"
 	}
 
 	direction := "DESC"

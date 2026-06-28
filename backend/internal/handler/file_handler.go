@@ -16,16 +16,20 @@ import (
 	"local-file-hub/backend/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
 
 // FileHandler 文件处理器
 type FileHandler struct {
 	UploadService    *service.UploadService
+	DownloadService  *service.DownloadService
 	FileRepo         *repository.FileRepo
 	StorageService   *service.StorageService
 	OperationLogRepo *repository.OperationLogRepo
 	UserRepo         *repository.UserRepo
+	UploadTaskRepo   *repository.UploadTaskRepo
 }
 
 // ==================== 请求体定义 ====================
@@ -35,6 +39,7 @@ type UploadInitReq struct {
 	FileName   string `json:"fileName" binding:"required"`
 	FileSize   int64  `json:"fileSize" binding:"required"`
 	FileMD5    string `json:"md5"`
+	FilePath   string `json:"filePath"`
 	FolderID   int64  `json:"folderId"`
 	Visibility int8   `json:"visibility"`
 }
@@ -48,6 +53,72 @@ type UploadMergeReq struct {
 // UploadCancelReq 取消上传请求
 type UploadCancelReq struct {
 	TaskID string `json:"taskId" binding:"required"`
+}
+
+// UploadPauseReq 暂停上传请求
+type UploadPauseReq struct {
+	TaskID string `json:"taskId" binding:"required"`
+}
+
+// DownloadInitReq 初始化下载请求
+type DownloadInitReq struct {
+	FileID int64 `json:"fileId" binding:"required"`
+}
+
+// DownloadTaskReq 下载任务操作请求（暂停/恢复/取消）
+type DownloadTaskReq struct {
+	TaskID string `json:"taskId" binding:"required"`
+}
+
+// DownloadListResp 下载任务列表响应
+type DownloadListResp struct {
+	Items    []*model.DownloadTask `json:"items"`
+	Total    int64                 `json:"total"`
+	Page     int                   `json:"page"`
+	PageSize int                   `json:"pageSize"`
+}
+
+// TasksListResp 统一任务列表响应
+type TasksListResp struct {
+	UploadTasks   []*model.UploadTask   `json:"uploadTasks"`
+	DownloadTasks []*model.DownloadTask `json:"downloadTasks"`
+}
+
+// TasksHistoryReq 历史任务查询参数
+type TasksHistoryReq struct {
+	Type     string `form:"type"`     // upload|download
+	Status   string `form:"status"`   // 逗号分隔的状态值
+	Keyword  string `form:"keyword"`  // 文件名模糊搜索
+	Page     int    `form:"page"`     // 页码
+	PageSize int    `form:"pageSize"` // 每页数量
+}
+
+// TasksHistoryResp 历史任务分页响应
+type TasksHistoryResp struct {
+	Items    interface{} `json:"items"`
+	Total    int64       `json:"total"`
+	Page     int         `json:"page"`
+	PageSize int         `json:"pageSize"`
+}
+
+// TaskStatsItem 单个统计项
+type TaskStatsItem struct {
+	Count     int64 `json:"count"`
+	TotalSize int64 `json:"totalSize"`
+	AvgSpeed  int64 `json:"avgSpeed"`
+}
+
+// TasksStatsResp 今日统计响应
+type TasksStatsResp struct {
+	Upload   *TaskStatsItem `json:"upload"`
+	Download *TaskStatsItem `json:"download"`
+}
+
+// TasksBatchReq 批量操作请求
+type TasksBatchReq struct {
+	TaskType string   `json:"taskType" binding:"required"` // upload|download
+	Action   string   `json:"action" binding:"required"`   // pause|resume|cancel
+	TaskIDs  []string `json:"taskIds" binding:"required"`  // 任务ID列表
 }
 
 // MoveFileReq 移动文件请求
@@ -128,7 +199,7 @@ func (h *FileHandler) UploadInit(c *gin.Context) {
 
 	userID := c.GetInt64("user_id")
 
-	resp, err := h.UploadService.InitUpload(userID, req.FileName, req.FileSize, req.FileMD5, req.FolderID, req.Visibility)
+	resp, err := h.UploadService.InitUpload(userID, req.FileName, req.FileSize, req.FileMD5, req.FilePath, req.FolderID, req.Visibility)
 	if err != nil {
 		log.Printf("upload init error: %v", err)
 		response.Error(c, response.CodeInternal, "初始化上传失败")
@@ -233,6 +304,474 @@ func (h *FileHandler) UploadCancel(c *gin.Context) {
 
 	h.logOperation(c, userID, OperTypeUpload, 1, nil, "取消上传: taskID="+req.TaskID)
 	response.SuccessWithMsg(c, "已取消上传", nil)
+}
+
+// UploadStatus 查询上传状态
+func (h *FileHandler) UploadStatus(c *gin.Context) {
+	taskID := c.Query("taskId")
+	if taskID == "" {
+		response.Error(c, response.CodeBadRequest, "缺少taskId参数")
+		return
+	}
+
+	resp, err := h.UploadService.GetUploadStatus(taskID)
+	if err != nil {
+		log.Printf("upload status error: %v", err)
+		response.Error(c, response.CodeNotFound, "查询上传状态失败")
+		return
+	}
+
+	response.Success(c, resp)
+}
+
+// UploadPause 暂停上传
+func (h *FileHandler) UploadPause(c *gin.Context) {
+	var req UploadPauseReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	// 校验任务归属权
+	task, err := h.UploadService.GetTask(req.TaskID)
+	if err != nil || task.UserID != userID {
+		response.Error(c, response.CodeForbidden, "无权操作此上传任务")
+		return
+	}
+
+	if err := h.UploadService.PauseUpload(req.TaskID); err != nil {
+		log.Printf("upload pause error: %v", err)
+		response.Error(c, response.CodeInternal, "暂停上传失败")
+		return
+	}
+
+	response.SuccessWithMsg(c, "已暂停上传", nil)
+}
+
+// UploadResume 恢复上传
+func (h *FileHandler) UploadResume(c *gin.Context) {
+	var req UploadPauseReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	// 校验任务归属权
+	task, err := h.UploadService.GetTask(req.TaskID)
+	if err != nil || task.UserID != userID {
+		response.Error(c, response.CodeForbidden, "无权操作此上传任务")
+		return
+	}
+
+	resp, err := h.UploadService.ResumeUpload(req.TaskID)
+	if err != nil {
+		log.Printf("upload resume error: %v", err)
+		response.Error(c, response.CodeInternal, "恢复上传失败")
+		return
+	}
+
+	response.Success(c, resp)
+}
+
+// UploadUnfinished 获取用户未完成上传任务列表
+func (h *FileHandler) UploadUnfinished(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+
+	tasks, err := h.UploadService.GetUnfinishedTasks(userID)
+	if err != nil {
+		log.Printf("upload unfinished error: %v", err)
+		response.Error(c, response.CodeInternal, "获取未完成任务失败")
+		return
+	}
+
+	response.Success(c, tasks)
+}
+
+// DownloadInit 初始化下载任务
+func (h *FileHandler) DownloadInit(c *gin.Context) {
+	var req DownloadInitReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	resp, err := h.DownloadService.InitDownload(userID, req.FileID)
+	if err != nil {
+		log.Printf("download init error: %v", err)
+		response.Error(c, response.CodeInternal, "初始化下载失败")
+		return
+	}
+
+	response.Success(c, resp)
+}
+
+// DownloadStatus 查询下载任务状态
+func (h *FileHandler) DownloadStatus(c *gin.Context) {
+	taskID := c.Query("taskId")
+	if taskID == "" {
+		response.Error(c, response.CodeBadRequest, "缺少taskId参数")
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	task, err := h.DownloadService.GetTask(taskID)
+	if err != nil {
+		log.Printf("download status error: %v", err)
+		response.Error(c, response.CodeNotFound, "下载任务不存在")
+		return
+	}
+
+	if task.UserID != userID {
+		response.Error(c, response.CodeForbidden, "无权操作此下载任务")
+		return
+	}
+
+	response.Success(c, task)
+}
+
+// DownloadPause 暂停下载
+func (h *FileHandler) DownloadPause(c *gin.Context) {
+	var req DownloadTaskReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	task, err := h.DownloadService.GetTask(req.TaskID)
+	if err != nil || task.UserID != userID {
+		response.Error(c, response.CodeForbidden, "无权操作此下载任务")
+		return
+	}
+
+	if err := h.DownloadService.PauseDownload(req.TaskID); err != nil {
+		log.Printf("download pause error: %v", err)
+		response.Error(c, response.CodeInternal, "暂停下载失败")
+		return
+	}
+
+	response.SuccessWithMsg(c, "已暂停下载", nil)
+}
+
+// DownloadResume 恢复下载
+func (h *FileHandler) DownloadResume(c *gin.Context) {
+	var req DownloadTaskReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	task, err := h.DownloadService.GetTask(req.TaskID)
+	if err != nil || task.UserID != userID {
+		response.Error(c, response.CodeForbidden, "无权操作此下载任务")
+		return
+	}
+
+	if err := h.DownloadService.ResumeDownload(req.TaskID); err != nil {
+		log.Printf("download resume error: %v", err)
+		response.Error(c, response.CodeInternal, "恢复下载失败")
+		return
+	}
+
+	response.SuccessWithMsg(c, "已恢复下载", nil)
+}
+
+// DownloadCancel 取消下载
+func (h *FileHandler) DownloadCancel(c *gin.Context) {
+	var req DownloadTaskReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "参数错误: "+err.Error())
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	task, err := h.DownloadService.GetTask(req.TaskID)
+	if err != nil || task.UserID != userID {
+		response.Error(c, response.CodeForbidden, "无权操作此下载任务")
+		return
+	}
+
+	if err := h.DownloadService.CancelDownload(req.TaskID); err != nil {
+		log.Printf("download cancel error: %v", err)
+		response.Error(c, response.CodeInternal, "取消下载失败")
+		return
+	}
+
+	response.SuccessWithMsg(c, "已取消下载", nil)
+}
+
+// DownloadList 获取用户活跃/暂停下载列表
+func (h *FileHandler) DownloadList(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	offset := (page - 1) * pageSize
+
+	tasks, total, err := h.DownloadService.DownloadTaskRepo.FindByUserAndStatuses(userID, []int8{
+		model.DownloadStatusDownloading,
+		model.DownloadStatusPaused,
+	}, offset, pageSize)
+	if err != nil {
+		log.Printf("download list error: %v", err)
+		response.Error(c, response.CodeInternal, "获取下载列表失败")
+		return
+	}
+
+	response.Success(c, DownloadListResp{
+		Items:    tasks,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	})
+}
+
+// TasksList 统一任务列表（上传+下载合并查询）
+func (h *FileHandler) TasksList(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+
+	var (
+		uploadTasks   []*model.UploadTask
+		downloadTasks []*model.DownloadTask
+	)
+
+	g, _ := errgroup.WithContext(c.Request.Context())
+
+	// 并发查询上传任务：status=1(上传中) 和 5(已暂停)
+	g.Go(func() error {
+		var err error
+		uploadTasks, err = h.UploadService.GetUnfinishedTasks(userID)
+		return err
+	})
+
+	// 并发查询下载任务：status=1(下载中) 和 3(已暂停)
+	g.Go(func() error {
+		var err error
+		downloadTasks, _, err = h.DownloadService.DownloadTaskRepo.FindByUserAndStatuses(userID, []int8{
+			model.DownloadStatusDownloading,
+			model.DownloadStatusPaused,
+		}, 0, 0)
+		return err
+	})
+
+	if err := g.Wait(); err != nil {
+		log.Printf("tasks list error: %v", err)
+		response.Error(c, response.CodeInternal, "获取任务列表失败")
+		return
+	}
+
+	response.Success(c, TasksListResp{
+		UploadTasks:   uploadTasks,
+		DownloadTasks: downloadTasks,
+	})
+}
+
+// TasksHistory 分页查询历史任务（已完成/失败/取消）
+func (h *FileHandler) TasksHistory(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+
+	taskType := c.DefaultQuery("type", "download")
+	keyword := c.Query("keyword")
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	offset := (page - 1) * pageSize
+
+	// 默认状态：已完成 + 失败 + 已取消
+	var statuses []int8
+	if statusStr := c.Query("status"); statusStr != "" {
+		for _, s := range strings.Split(statusStr, ",") {
+			v, err := strconv.ParseInt(strings.TrimSpace(s), 10, 8)
+			if err == nil {
+				statuses = append(statuses, int8(v))
+			}
+		}
+	}
+
+	switch taskType {
+	case "upload":
+		if len(statuses) == 0 {
+			statuses = []int8{model.UploadStatusCompleted, model.UploadStatusCancelled}
+		}
+		// upload_task 没有 FindHistoryByUser，使用 FindByUserAndStatus 分页变体
+		// 为 upload 复用 download repo 的模式，这里简化处理
+		tasks, total, err := h.findUploadHistory(userID, statuses, keyword, offset, pageSize)
+		if err != nil {
+			log.Printf("tasks history upload error: %v", err)
+			response.Error(c, response.CodeInternal, "获取上传历史失败")
+			return
+		}
+		response.Success(c, TasksHistoryResp{
+			Items:    tasks,
+			Total:    total,
+			Page:     page,
+			PageSize: pageSize,
+		})
+	default:
+		if len(statuses) == 0 {
+			statuses = []int8{model.DownloadStatusCompleted, model.DownloadStatusFailed, model.DownloadStatusCancelled}
+		}
+		tasks, total, err := h.DownloadService.DownloadTaskRepo.FindHistoryByUser(userID, statuses, keyword, offset, pageSize)
+		if err != nil {
+			log.Printf("tasks history download error: %v", err)
+			response.Error(c, response.CodeInternal, "获取下载历史失败")
+			return
+		}
+		response.Success(c, TasksHistoryResp{
+			Items:    tasks,
+			Total:    total,
+			Page:     page,
+			PageSize: pageSize,
+		})
+	}
+}
+
+// findUploadHistory 分页查询上传历史（内部辅助方法）
+func (h *FileHandler) findUploadHistory(userID int64, statuses []int8, keyword string, offset, limit int) ([]*model.UploadTask, int64, error) {
+	// 先通过 FindByUserAndStatus 获取全部，内存中过滤 + 分页
+	allTasks, err := h.UploadTaskRepo.FindByUserAndStatus(userID, statuses)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// keyword 过滤
+	var filtered []*model.UploadTask
+	if keyword != "" {
+		lowerKW := strings.ToLower(keyword)
+		for _, t := range allTasks {
+			if strings.Contains(strings.ToLower(t.FileName), lowerKW) {
+				filtered = append(filtered, t)
+			}
+		}
+	} else {
+		filtered = allTasks
+	}
+
+	total := int64(len(filtered))
+
+	// 分页切片
+	if offset >= len(filtered) {
+		return []*model.UploadTask{}, total, nil
+	}
+	end := offset + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[offset:end], total, nil
+}
+
+// TasksStats 今日任务统计（并发查询上传+下载）
+func (h *FileHandler) TasksStats(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+
+	var (
+		uploadStats   *repository.TodayStats
+		downloadStats *repository.TodayStats
+	)
+
+	g, _ := errgroup.WithContext(c.Request.Context())
+
+	g.Go(func() error {
+		var err error
+		uploadStats, err = h.UploadTaskRepo.GetTodayStats(userID)
+		return err
+	})
+
+	g.Go(func() error {
+		var err error
+		downloadStats, err = h.DownloadService.DownloadTaskRepo.GetTodayStats(userID)
+		return err
+	})
+
+	if err := g.Wait(); err != nil {
+		log.Printf("tasks stats error: %v", err)
+		response.Error(c, response.CodeInternal, "获取统计失败")
+		return
+	}
+
+	resp := TasksStatsResp{}
+	if uploadStats != nil {
+		resp.Upload = &TaskStatsItem{
+			Count:     uploadStats.Count,
+			TotalSize: uploadStats.TotalSize,
+			AvgSpeed:  uploadStats.AvgSpeed,
+		}
+	}
+	if downloadStats != nil {
+		resp.Download = &TaskStatsItem{
+			Count:     downloadStats.Count,
+			TotalSize: downloadStats.TotalSize,
+			AvgSpeed:  downloadStats.AvgSpeed,
+		}
+	}
+
+	response.Success(c, resp)
+}
+
+// TasksBatch 批量操作任务（pause/resume/cancel）
+func (h *FileHandler) TasksBatch(c *gin.Context) {
+	var req TasksBatchReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, response.CodeBadRequest, "请求参数错误: "+err.Error())
+		return
+	}
+
+	if len(req.TaskIDs) == 0 {
+		response.Error(c, response.CodeBadRequest, "taskIds不能为空")
+		return
+	}
+
+	if req.Action != "pause" && req.Action != "resume" && req.Action != "cancel" {
+		response.Error(c, response.CodeBadRequest, "action必须为 pause/resume/cancel")
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+
+	switch req.TaskType {
+	case "upload":
+		if err := h.UploadService.BatchAction(userID, req.TaskIDs, req.Action); err != nil {
+			log.Printf("tasks batch upload error: %v", err)
+			response.Error(c, response.CodeInternal, "批量操作上传任务失败")
+			return
+		}
+	case "download":
+		if err := h.DownloadService.BatchAction(userID, req.TaskIDs, req.Action); err != nil {
+			log.Printf("tasks batch download error: %v", err)
+			response.Error(c, response.CodeInternal, "批量操作下载任务失败")
+			return
+		}
+	default:
+		response.Error(c, response.CodeBadRequest, "taskType必须为 upload 或 download")
+		return
+	}
+
+	response.SuccessWithMsg(c, "批量操作成功", nil)
 }
 
 // ==================== 文件管理 Handler ====================
@@ -423,7 +962,10 @@ func (h *FileHandler) Download(c *gin.Context) {
 
 	h.logOperation(c, userID, OperTypeDownload, 1, &fileInfo.ID, "下载文件: "+fileInfo.FileName)
 
-	c.FileAttachment(fileInfo.FullPath, fileInfo.FileName)
+	// 使用 c.File() 替代 c.FileAttachment() 以支持 HTTP Range 请求（断点续传下载）
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileInfo.FileName))
+	c.Header("Accept-Ranges", "bytes")
+	c.File(fileInfo.FullPath)
 }
 
 // Preview 预览文件
@@ -669,7 +1211,8 @@ func (h *FileHandler) RecycleDelete(c *gin.Context) {
 
 // UpdateVisibilityReq 更新文件可见性请求
 type UpdateVisibilityReq struct {
-	Visibility int8 `json:"visibility" binding:"oneof=0 1"`
+	Visibility int8   `json:"visibility" binding:"oneof=0 1"`
+	Password   string `json:"password"` // 设为公有时需提供密码确认
 }
 
 // UpdateVisibility 切换文件可见性（公共/私有）
@@ -709,9 +1252,31 @@ func (h *FileHandler) UpdateVisibility(c *gin.Context) {
 		return
 	}
 
+	// 设为公共(visibility=1)时必须提供密码确认
+	if req.Visibility == 1 {
+		if req.Password == "" {
+			response.Error(c, response.CodeBadRequest, "设为公共需要密码确认")
+			return
+		}
+		user, err := h.UserRepo.FindByID(userID)
+		if err != nil {
+			response.Error(c, response.CodeInternal, "获取用户信息失败")
+			return
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+			response.Error(c, response.CodePasswordWrong, "密码错误")
+			return
+		}
+	}
+
 	if err := h.FileRepo.UpdateVisibility(fileID, req.Visibility); err != nil {
 		response.Error(c, response.CodeInternal, "更新可见性失败")
 		return
+	}
+
+	// 同步更新关联的上传任务可见性（确保公共空间能查询到该文件）
+	if fileInfo.TaskID != nil && *fileInfo.TaskID != "" {
+		_ = h.UploadTaskRepo.UpdateVisibility(*fileInfo.TaskID, req.Visibility)
 	}
 
 	visibilityLabel := "设为私有"

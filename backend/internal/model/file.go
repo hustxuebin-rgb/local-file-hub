@@ -14,6 +14,7 @@ type FileInfo struct {
 	FileSize      int64      `gorm:"column:file_size;type:bigint;not null;default:0" json:"fileSize"`
 	MimeType      *string    `gorm:"column:mime_type;type:varchar(127)" json:"mimeType"`
 	MD5           string     `gorm:"column:md5;type:varchar(32);not null;index:idx_md5" json:"md5"`
+	TaskID        *string    `gorm:"column:task_id;type:varchar(64);index:idx_task_id" json:"taskId"`
 	FullPath      string     `gorm:"column:full_path;type:varchar(500);not null" json:"fullPath"`
 	ThumbnailPath *string    `gorm:"column:thumbnail_path;type:varchar(500)" json:"thumbnailPath"`
 	PreviewPath   *string    `gorm:"column:preview_path;type:varchar(500)" json:"previewPath"`

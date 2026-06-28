@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,14 +20,6 @@ import (
 	"local-file-hub/backend/internal/repository"
 
 	"gorm.io/gorm"
-)
-
-// 上传任务状态常量
-const (
-	UploadStatusUploading = 1 // 上传中
-	UploadStatusMerging   = 2 // 合并中
-	UploadStatusCompleted = 3 // 已完成
-	UploadStatusCancelled = 4 // 已取消
 )
 
 // UploadService 上传服务
@@ -56,9 +49,33 @@ type InitUploadResp struct {
 	ConflictFileID int64  `json:"conflictFileId,omitempty"` // 冲突文件ID
 }
 
+// UploadStatusResp 上传状态响应
+type UploadStatusResp struct {
+	TaskID         string  `json:"taskId"`
+	FileName       string  `json:"fileName"`
+	TotalSize      int64   `json:"totalSize"`
+	ChunkSize      int     `json:"chunkSize"`
+	TotalChunks    int     `json:"totalChunks"`
+	FinishedChunks []int   `json:"finishedChunks"`
+	FinishedCount  int     `json:"finishedCount"`
+	Status         int8    `json:"status"`
+	Progress       float64 `json:"progress"`
+}
+
+// UploadResumeResp 上传恢复响应
+type UploadResumeResp struct {
+	TaskID         string `json:"taskId"`
+	FileName       string `json:"fileName"`
+	TotalSize      int64  `json:"totalSize"`
+	ChunkSize      int    `json:"chunkSize"`
+	TotalChunks    int    `json:"totalChunks"`
+	FinishedChunks []int  `json:"finishedChunks"`
+	FinishedCount  int    `json:"finishedCount"`
+}
+
 // InitUpload 初始化上传任务，含秒传检测
 // 若 fileMD5 非空且系统中已存在相同MD5的文件，则秒传完成
-func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64, fileMD5 string, folderID int64, visibility int8) (*InitUploadResp, error) {
+func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64, fileMD5 string, filePath string, folderID int64, visibility int8) (*InitUploadResp, error) {
 	// 检查空间
 	if err := s.StorageService.CheckSpace(userID, fileSize); err != nil {
 		return nil, err
@@ -107,24 +124,22 @@ func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64
 		conflictFileID = existing.ID
 	}
 
-	// 计算分块
-	chunkSize := 5 * 1024 * 1024 // 默认5MB
-	totalChunk := int((fileSize + int64(chunkSize) - 1) / int64(chunkSize))
-	if totalChunk == 0 {
-		totalChunk = 1
-	}
+	// 计算分块（分片大小策略）
+	chunkSize, totalChunk := calcChunkStrategy(fileSize)
 
 	taskID := generateUUID()
 	task := &model.UploadTask{
 		UserID:     userID,
 		TaskID:     taskID,
 		FileName:   fileName,
+		MD5:        fileMD5,
 		TotalSize:  fileSize,
 		ChunkSize:  chunkSize,
 		TotalChunk: totalChunk,
 		FolderID:   folderID,
 		Visibility: visibility,
-		Status:     UploadStatusUploading,
+		Status:     model.UploadStatusUploading,
+		FilePath:   filePath,
 	}
 
 	if err := s.UploadTaskRepo.Create(task); err != nil {
@@ -141,13 +156,33 @@ func (s *UploadService) InitUpload(userID int64, fileName string, fileSize int64
 	}, nil
 }
 
-// CreateChunk 写入单个分块到临时存储
+// calcChunkStrategy 根据文件大小计算分片策略
+func calcChunkStrategy(fileSize int64) (chunkSize int, totalChunks int) {
+	switch {
+	case fileSize < 10*1024*1024: // < 10MB 不分片
+		chunkSize = int(fileSize)
+	case fileSize < 100*1024*1024: // 10-100MB → 2MB
+		chunkSize = 2 * 1024 * 1024
+	case fileSize < 1024*1024*1024: // 100MB-1GB → 5MB
+		chunkSize = 5 * 1024 * 1024
+	default: // > 1GB → 10MB
+		chunkSize = 10 * 1024 * 1024
+	}
+
+	totalChunks = int((fileSize + int64(chunkSize) - 1) / int64(chunkSize))
+	if totalChunks == 0 {
+		totalChunks = 1
+	}
+	return
+}
+
+// CreateChunk 写入单个分块到临时存储（幂等操作）
 func (s *UploadService) CreateChunk(taskID string, chunkIndex int, data []byte) error {
 	task, err := s.UploadTaskRepo.FindByTaskID(taskID)
 	if err != nil {
 		return err
 	}
-	if task.Status != UploadStatusUploading {
+	if task.Status != model.UploadStatusUploading && task.Status != model.UploadStatusPaused {
 		return errors.New("上传任务状态异常，无法接收分块")
 	}
 
@@ -157,12 +192,22 @@ func (s *UploadService) CreateChunk(taskID string, chunkIndex int, data []byte) 
 	}
 
 	chunkPath := filepath.Join(chunkDir, strconv.Itoa(chunkIndex))
+
+	// 幂等检查：分片已存在则跳过
+	if _, err := os.Stat(chunkPath); err == nil {
+		return nil
+	}
+
 	if err := os.WriteFile(chunkPath, data, 0644); err != nil {
 		return err
 	}
 
-	// 更新进度
-	return s.UploadTaskRepo.UpdateChunkProgress(taskID, task.FinishedChunk+1)
+	// 进度更新：扫描目录获取实际分片数量（而非简单 +1）
+	entries, err := os.ReadDir(chunkDir)
+	if err != nil {
+		return err
+	}
+	return s.UploadTaskRepo.UpdateChunkProgress(taskID, len(entries))
 }
 
 // MergeChunks 合并所有分块为最终文件，计算MD5
@@ -172,12 +217,12 @@ func (s *UploadService) MergeChunks(taskID string, overwriteFileID int64) (*mode
 	if err != nil {
 		return nil, err
 	}
-	if task.Status != UploadStatusUploading {
+	if task.Status != model.UploadStatusUploading && task.Status != model.UploadStatusPaused {
 		return nil, errors.New("上传任务状态异常，无法合并")
 	}
 
 	// 标记为合并中
-	if err := s.UploadTaskRepo.UpdateStatus(taskID, UploadStatusMerging); err != nil {
+	if err := s.UploadTaskRepo.UpdateStatus(taskID, model.UploadStatusMerging); err != nil {
 		return nil, err
 	}
 
@@ -258,6 +303,7 @@ func (s *UploadService) MergeChunks(taskID string, overwriteFileID int64) (*mode
 		FileSize:   task.TotalSize,
 		MimeType:   &mimeType,
 		MD5:        md5Hash,
+		TaskID:     &task.TaskID,
 		FullPath:   destPath,
 		Visibility: task.Visibility,
 		CreateTime: now,
@@ -294,7 +340,7 @@ func (s *UploadService) MergeChunks(taskID string, overwriteFileID int64) (*mode
 	os.RemoveAll(chunkDir)
 
 	// 标记完成
-	if err := s.UploadTaskRepo.UpdateStatus(taskID, UploadStatusCompleted); err != nil {
+	if err := s.UploadTaskRepo.UpdateStatus(taskID, model.UploadStatusCompleted); err != nil {
 		return nil, err
 	}
 
@@ -313,7 +359,120 @@ func (s *UploadService) CancelUpload(taskID string) error {
 	os.RemoveAll(chunkDir)
 
 	// 更新状态为已取消
-	return s.UploadTaskRepo.UpdateStatus(taskID, UploadStatusCancelled)
+	return s.UploadTaskRepo.UpdateStatus(taskID, model.UploadStatusCancelled)
+}
+
+// GetUploadStatus 查询上传状态（扫描分片目录返回已完成分片列表）
+func (s *UploadService) GetUploadStatus(taskID string) (*UploadStatusResp, error) {
+	task, err := s.UploadTaskRepo.FindByTaskID(taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	finishedChunks, finishedCount := scanFinishedChunks(s.ChunkDir, taskID)
+
+	progress := float64(0)
+	if task.TotalChunk > 0 {
+		progress = float64(finishedCount) / float64(task.TotalChunk) * 100
+	}
+
+	return &UploadStatusResp{
+		TaskID:         task.TaskID,
+		FileName:       task.FileName,
+		TotalSize:      task.TotalSize,
+		ChunkSize:      task.ChunkSize,
+		TotalChunks:    task.TotalChunk,
+		FinishedChunks: finishedChunks,
+		FinishedCount:  finishedCount,
+		Status:         task.Status,
+		Progress:       progress,
+	}, nil
+}
+
+// PauseUpload 暂停上传任务
+func (s *UploadService) PauseUpload(taskID string) error {
+	_, err := s.UploadTaskRepo.FindByTaskID(taskID)
+	if err != nil {
+		return err
+	}
+
+	return s.UploadTaskRepo.UpdatePauseTime(taskID, time.Now())
+}
+
+// ResumeUpload 恢复上传任务（返回已完成分片列表）
+func (s *UploadService) ResumeUpload(taskID string) (*UploadResumeResp, error) {
+	task, err := s.UploadTaskRepo.FindByTaskID(taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	if task.Status != model.UploadStatusPaused {
+		return nil, errors.New("任务未处于暂停状态，无法恢复")
+	}
+
+	// 恢复为上传中
+	if err := s.UploadTaskRepo.UpdateStatus(taskID, model.UploadStatusUploading); err != nil {
+		return nil, err
+	}
+
+	finishedChunks, finishedCount := scanFinishedChunks(s.ChunkDir, taskID)
+
+	return &UploadResumeResp{
+		TaskID:         task.TaskID,
+		FileName:       task.FileName,
+		TotalSize:      task.TotalSize,
+		ChunkSize:      task.ChunkSize,
+		TotalChunks:    task.TotalChunk,
+		FinishedChunks: finishedChunks,
+		FinishedCount:  finishedCount,
+	}, nil
+}
+
+// GetUnfinishedTasks 获取用户所有未完成的上传任务
+func (s *UploadService) GetUnfinishedTasks(userID int64) ([]*model.UploadTask, error) {
+	return s.UploadTaskRepo.FindByUserAndStatus(userID, []int8{
+		model.UploadStatusUploading,
+		model.UploadStatusPaused,
+	})
+}
+
+// BatchAction 批量操作上传任务（pause/resume/cancel）
+func (s *UploadService) BatchAction(userID int64, taskIDs []string, action string) error {
+	switch action {
+	case "pause":
+		return s.UploadTaskRepo.BatchUpdateStatus(userID, taskIDs, model.UploadStatusPaused)
+	case "resume":
+		return s.UploadTaskRepo.BatchUpdateStatus(userID, taskIDs, model.UploadStatusUploading)
+	case "cancel":
+		return s.UploadTaskRepo.BatchUpdateStatus(userID, taskIDs, model.UploadStatusCancelled)
+	default:
+		return errors.New("不支持的操作类型")
+	}
+}
+
+// scanFinishedChunks 扫描分片目录返回已完成的分片索引列表和数量
+func scanFinishedChunks(chunkDir, taskID string) ([]int, int) {
+	dir := filepath.Join(chunkDir, taskID)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []int{}, 0
+	}
+
+	finishedChunks := make([]int, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		// 分片文件名是数字字符串
+		idx, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		finishedChunks = append(finishedChunks, idx)
+	}
+
+	sort.Ints(finishedChunks)
+	return finishedChunks, len(finishedChunks)
 }
 
 // generateUUID 生成UUID格式字符串
