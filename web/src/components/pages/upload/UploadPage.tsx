@@ -1272,11 +1272,11 @@ function UploadPage(): React.ReactNode {
         </div>
 
         {/* 上传任务列表 */}
-        {uploadTasks.length > 0 && (
+        {sessionTasks.length > 0 && (
           <Table<UploadTask>
             rowKey="uid"
             columns={columns}
-            dataSource={uploadTasks}
+            dataSource={sessionTasks}
             pagination={false}
             size="small"
           />
