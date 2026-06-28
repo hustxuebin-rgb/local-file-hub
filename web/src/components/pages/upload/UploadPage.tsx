@@ -469,6 +469,7 @@ function UploadPage(): React.ReactNode {
           file: entry.file, // 保留 File 引用用于暂停/恢复
         };
         setUploadTasks((prev) => [...prev, task]);
+        setSessionTasks((prev) => [...prev, task]);
       }
 
       // 并发上传（逐个文件，每个文件内部是并发分片）
@@ -1046,43 +1047,11 @@ function UploadPage(): React.ReactNode {
     });
   }, [uploadTasks, targetFolderId, partition]);
 
-  // 页面加载时恢复未完成的上传任务
+
+  // 将 uploadTasks 同步到 sessionTasks（处理暂停/恢复/重试/取消等操作的更新）
   useEffect(() => {
-    loadUnfinishedUploads();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const loadUnfinishedUploads = async () => {
-    try {
-      const res = await getUnfinishedUploads();
-      if (!res.data || res.data.length === 0) return;
-
-      const recoveredTasks: UploadTask[] = res.data.map((task): UploadTask => ({
-        uid: `recovered_${task.taskId}`,
-        taskId: task.taskId,
-        fileName: task.fileName,
-        filePath: task.filePath,
-        fileSize: task.totalSize,
-        progress:
-          task.totalChunk > 0
-            ? Math.round((task.finishedChunk / task.totalChunk) * 100)
-            : 0,
-        status: 'paused' as const,
-        totalChunks: task.totalChunk,
-        finishedChunks: task.finishedChunk > 0
-          ? Array.from({ length: task.finishedChunk }, (_, i) => i)
-          : [],
-      }));
-
-      setUploadTasks((prev) => [...prev, ...recoveredTasks]);
-      message.info(
-        `检测到 ${recoveredTasks.length} 个未完成的上传任务。刷新页面后需重新选择文件才能恢复上传。`,
-        5,
-      );
-    } catch {
-      // 静默失败
-    }
-  };
+    setSessionTasks(uploadTasks);
+  }, [uploadTasks]);
 
   const columns = [
     { title: '文件名', dataIndex: 'fileName', key: 'fileName' },
