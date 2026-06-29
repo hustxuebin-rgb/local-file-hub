@@ -40,6 +40,7 @@ vi.mock('@/api/file', () => ({
     },
   }),
   tasksBatch: vi.fn().mockResolvedValue({ code: 200, msg: 'ok' }),
+  getUnfinishedUploads: vi.fn().mockResolvedValue({ data: [] }),
 }));
 
 vi.mock('@/stores/useTaskStore', () => {

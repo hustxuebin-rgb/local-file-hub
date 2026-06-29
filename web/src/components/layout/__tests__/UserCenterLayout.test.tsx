@@ -67,5 +67,6 @@ describe('UserCenterLayout - Server 状态指示器', () => {
 
     expect(screen.getByText('个人资料')).toBeInTheDocument();
     expect(screen.getByText('存储配额')).toBeInTheDocument();
+    expect(screen.getByText('操作记录')).toBeInTheDocument();
   });
 });

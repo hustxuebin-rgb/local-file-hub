@@ -6,8 +6,11 @@ import {
   FileTextOutlined,
   FileZipOutlined,
   FolderOutlined,
+  StarOutlined,
+  StarFilled,
 } from '@ant-design/icons';
 import type { FileInfo, PublicFile } from '@/types';
+import { isPreviewable } from '@/utils/preview';
 
 export type GridFileItem = (FileInfo | PublicFile) & { uploaderName?: string; targetType?: number; targetId?: number; targetName?: string; targetSize?: number };
 
@@ -42,6 +45,7 @@ interface FileGridViewProps {
   onPreview?: (file: GridFileItem) => void;
   onFavorite?: (file: GridFileItem) => void;
   onRemoveFavorite?: (file: GridFileItem) => void;
+  isFavorited?: (id: number) => boolean;
   showUploader?: boolean;
 }
 
@@ -52,6 +56,7 @@ function FileGridView({
   onPreview,
   onFavorite,
   onRemoveFavorite,
+  isFavorited,
   showUploader = false,
 }: FileGridViewProps): React.ReactNode {
   if (!loading && files.length === 0) {
@@ -78,25 +83,52 @@ function FileGridView({
           );
         }
         if (onPreview) {
-          actions.push(
-            <Tooltip key="preview" title="预览">
-              <span onClick={(e) => { e.stopPropagation(); onPreview(file); }}>预览</span>
-            </Tooltip>,
-          );
+          const suffix = fileSuffix || fileName?.split('.').pop();
+          if (isPreviewable(suffix)) {
+            actions.push(
+              <Tooltip key="preview" title="预览">
+                <span onClick={(e) => { e.stopPropagation(); onPreview(file); }}>预览</span>
+              </Tooltip>,
+            );
+          }
         }
-        if (onFavorite) {
-          actions.push(
-            <Tooltip key="favorite" title="收藏">
-              <span onClick={(e) => { e.stopPropagation(); onFavorite(file); }}>收藏</span>
-            </Tooltip>,
-          );
-        }
-        if (onRemoveFavorite) {
-          actions.push(
-            <Tooltip key="unfavorite" title="取消收藏">
-              <span onClick={(e) => { e.stopPropagation(); onRemoveFavorite(file); }}>取消收藏</span>
-            </Tooltip>,
-          );
+        if (onFavorite && onRemoveFavorite && isFavorited) {
+          const id = (file as FileInfo).id;
+          const favorited = isFavorited(id);
+          if (favorited) {
+            actions.push(
+              <Tooltip key="favorite" title="已收藏">
+                <StarFilled
+                  style={{ color: '#faad14', cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); onRemoveFavorite(file); }}
+                />
+              </Tooltip>,
+            );
+          } else {
+            actions.push(
+              <Tooltip key="favorite" title="收藏">
+                <StarOutlined
+                  style={{ cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); onFavorite(file); }}
+                />
+              </Tooltip>,
+            );
+          }
+        } else {
+          if (onFavorite) {
+            actions.push(
+              <Tooltip key="favorite" title="收藏">
+                <span onClick={(e) => { e.stopPropagation(); onFavorite(file); }}>收藏</span>
+              </Tooltip>,
+            );
+          }
+          if (onRemoveFavorite) {
+            actions.push(
+              <Tooltip key="unfavorite" title="取消收藏">
+                <span onClick={(e) => { e.stopPropagation(); onRemoveFavorite(file); }}>取消收藏</span>
+              </Tooltip>,
+            );
+          }
         }
 
         return (
@@ -165,7 +197,7 @@ function FileGridView({
               }
               description={
                 <div>
-                  <Tag>{fileType === 6 ? '文件夹' : fileSuffix}</Tag>
+                  <Tag>{fileType === 6 ? '文件夹' : ((fileSuffix?.replace(/^\./, '') || '').toUpperCase() || '-')}</Tag>
                   {fileSize > 0 && <span style={{ color: '#8c8c8c', fontSize: 12 }}>{formatFileSize(fileSize)}</span>}
                   {showUploader && file.uploaderName && (
                     <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>

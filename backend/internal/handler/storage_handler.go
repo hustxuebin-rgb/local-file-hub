@@ -159,7 +159,7 @@ func (h *StorageHandler) QuotaHandler(c *gin.Context) {
 // CreateDiskReq 创建磁盘请求体
 type CreateDiskReq struct {
 	DiskPath string `json:"diskPath" binding:"required"`
-	DiskType int8   `json:"diskType" binding:"required"`
+	DiskType *int8  `json:"diskType" binding:"required"`
 	Remark   string `json:"remark"`
 }
 
@@ -196,7 +196,7 @@ func (h *StorageHandler) CreateDiskHandler(c *gin.Context) {
 	usedSize := totalSize - availableSize
 
 	disk := &model.StorageDisk{
-		DiskType:      req.DiskType,
+		DiskType:      *req.DiskType,
 		DiskPath:      req.DiskPath,
 		TotalSize:     totalSize,
 		UsedSize:      usedSize,

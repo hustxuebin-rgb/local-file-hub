@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
-import { Card, Table, message, Button, Space, Tag, Breadcrumb, Empty } from 'antd';
+import { Card, Table, message, Button, Space, Tag, Breadcrumb, Empty, Tooltip } from 'antd';
 import type { TableProps } from 'antd';
 import {
   DownloadOutlined,
@@ -11,10 +11,11 @@ import {
   FileOutlined,
   HomeOutlined,
 } from '@ant-design/icons';
-import { listPublicFiles, listPublicFolders, addFavorite, removeFavorite } from '@/api';
+import { listPublicFiles, listPublicFolders, addFavorite, removeFavorite, downloadFolder } from '@/api';
 import { downloadFile, previewFile } from '@/api/file';
 import { useViewStore } from '@/stores/useViewStore';
 import { getErrorMessage } from '@/utils/errorCodes';
+import { isPreviewable } from '@/utils/preview';
 import FileSearchBar from '@/components/shared/FileSearchBar';
 import FileCategoryTabs from '@/components/shared/FileCategoryTabs';
 import FileSortDropdown from '@/components/shared/FileSortDropdown';
@@ -249,6 +250,23 @@ function PublicSpace(): React.ReactNode {
     }
   };
 
+  const handleDownloadFolder = async (id: number, folderName: string) => {
+    try {
+      const blob = await downloadFolder(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = folderName + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err: unknown) {
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    }
+  };
+
   // 进入子文件夹
   const handleEnterFolder = (folder: PublicFolder) => {
     setCurrentFolderId(folder.id);
@@ -269,14 +287,22 @@ function PublicSpace(): React.ReactNode {
       title: '文件名',
       dataIndex: 'name',
       key: 'name',
+      width: 260,
+      ellipsis: { showTitle: false },
       render: (name: string, record: PublicListItem) => (
         <Space>
           {record.itemType === 'folder' ? <FolderOutlined /> : <FileOutlined />}
-          <span style={{ cursor: record.itemType === 'folder' ? 'pointer' : 'default' }}>{name}</span>
           {record.itemType === 'folder' ? (
-            <Tag color="processing">文件夹</Tag>
+            <>
+              <Tooltip title={name}>
+                <span style={{ cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{name}</span>
+              </Tooltip>
+              <Tag color="processing">文件夹</Tag>
+            </>
           ) : (
-            <Tag>{record.fileSuffix}</Tag>
+            <Tooltip title={name}>
+              <span>{name}</span>
+            </Tooltip>
           )}
         </Space>
       ),
@@ -285,17 +311,14 @@ function PublicSpace(): React.ReactNode {
       title: '文件类型',
       dataIndex: 'fileType',
       key: 'fileType',
-      width: 100,
+      width: 110,
       render: (_type: number, record: PublicListItem) => {
         if (record.itemType === 'folder') return '文件夹';
-        const typeMap: Record<number, string> = {
-          1: '图片',
-          2: '视频',
-          3: '音频',
-          4: '文档',
-          5: '其他',
-        };
-        return typeMap[record.fileType] ?? '其他';
+        let suffix = record.fileSuffix?.replace(/^\./, '') || '';
+        if (!suffix) {
+          suffix = record.name?.split('.').pop() || '';
+        }
+        return suffix.toUpperCase() || '-';
       },
     },
     {
@@ -331,10 +354,22 @@ function PublicSpace(): React.ReactNode {
     {
       title: '操作',
       key: 'action',
-      width: 220,
+      width: 320,
       render: (_: unknown, record: PublicListItem) => {
         if (record.itemType === 'folder') {
-          return <span style={{ color: '#999' }}>进入文件夹查看</span>;
+          return (
+            <Space>
+              <Button
+                type="link"
+                size="small"
+                icon={<DownloadOutlined />}
+                onClick={() => handleDownloadFolder(record.id, record.name)}
+              >
+                下载
+              </Button>
+              <span style={{ color: '#999' }}>双击进入</span>
+            </Space>
+          );
         }
         return (
           <Space>
@@ -346,14 +381,16 @@ function PublicSpace(): React.ReactNode {
             >
               下载
             </Button>
-            <Button
-              type="link"
-              size="small"
-              icon={<EyeOutlined />}
-              onClick={() => handlePreview(record as unknown as PublicFile)}
-            >
-              预览
-            </Button>
+            {isPreviewable((record as unknown as PublicFile).fileSuffix) && (
+              <Button
+                type="link"
+                size="small"
+                icon={<EyeOutlined />}
+                onClick={() => handlePreview(record as unknown as PublicFile)}
+              >
+                预览
+              </Button>
+            )}
             {favoritedIds.has(record.id) ? (
               <Button
                 type="link"

@@ -198,6 +198,31 @@ func TestCreateDiskHandler_ValidPath(t *testing.T) {
 	assert.Equal(t, int8(1), disks[0].Status)
 }
 
+func TestCreateDiskHandler_DiskTypeZero(t *testing.T) {
+	db := setupStorageTestDB(t)
+	handler := newStorageHandler(db)
+
+	tmpDir := t.TempDir()
+	body := `{"diskPath":"` + filepath.ToSlash(tmpDir) + `","diskType":0}`
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/storage/disks", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.CreateDiskHandler(c)
+
+	assert.Equal(t, 200, w.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, 200, resp.Code)
+
+	var disks []model.StorageDisk
+	db.Find(&disks)
+	assert.Len(t, disks, 1)
+	assert.Equal(t, int8(0), disks[0].DiskType)
+}
+
 func TestCreateDiskHandler_InvalidPath(t *testing.T) {
 	db := setupStorageTestDB(t)
 	handler := newStorageHandler(db)

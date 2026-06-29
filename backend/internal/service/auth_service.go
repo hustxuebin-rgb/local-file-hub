@@ -28,13 +28,15 @@ type LoginResp struct {
 
 // UserInfo 用户信息
 type UserInfo struct {
-	ID           int64  `json:"id"`
-	Username     string `json:"username"`
-	Nickname     string `json:"nickname"`
-	Role         int8   `json:"role"`
-	StorageQuota int64  `json:"storageQuota"`
-	UsedSize     int64  `json:"usedSize"`
-	StorageRoot  string `json:"storageRoot"`
+	ID           int64     `json:"id"`
+	Username     string    `json:"username"`
+	Nickname     string    `json:"nickname"`
+	Role         int8      `json:"role"`
+	Status       int8      `json:"status"`
+	CreateTime   time.Time `json:"createTime"`
+	StorageQuota int64     `json:"storageQuota"`
+	UsedSize     int64     `json:"usedSize"`
+	StorageRoot  string    `json:"storageRoot"`
 }
 
 var (
@@ -84,6 +86,8 @@ func (s *AuthService) Login(username, password string, deviceType int8, deviceNa
 			Username:     user.Username,
 			Nickname:     user.Nickname,
 			Role:         user.Role,
+			Status:       user.Status,
+			CreateTime:   user.CreateTime,
 			StorageQuota: user.StorageQuota,
 			UsedSize:     user.UsedSize,
 			StorageRoot:  user.StorageRoot,

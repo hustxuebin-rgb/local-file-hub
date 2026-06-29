@@ -68,7 +68,7 @@ function ProfilePage(): React.ReactNode {
             <Descriptions.Item label="存储根目录">{user.storageRoot}</Descriptions.Item>
             <Descriptions.Item label="注册时间">{user.createTime}</Descriptions.Item>
             <Descriptions.Item label="状态">
-              {user.status === 0 ? '正常' : '禁用'}
+              {user.status === 1 ? '正常' : '禁用'}
             </Descriptions.Item>
           </Descriptions>
         </Space>

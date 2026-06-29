@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -482,6 +483,45 @@ func (h *FolderHandler) GetTree(c *gin.Context) {
 	}
 
 	response.Success(c, roots)
+}
+
+// ==================== 文件夹 ZIP 下载 ====================
+
+// FolderDownload 下载文件夹为 ZIP
+func (h *FolderHandler) FolderDownload(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+
+	folderID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.Error(c, response.CodeBadRequest, "参数格式错误")
+		return
+	}
+
+	folder, err := h.FolderRepo.FindByID(folderID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, response.CodeNotFound, "文件夹不存在")
+			return
+		}
+		response.Error(c, response.CodeInternal, "查询文件夹失败")
+		return
+	}
+
+	if folder.UserID != userID {
+		response.Error(c, response.CodeForbidden, "无权下载该文件夹")
+		return
+	}
+
+	zipPath, err := h.StorageService.ZipFolder(folderID, userID)
+	if err != nil {
+		response.Error(c, response.CodeInternal, "打包文件夹失败: "+err.Error())
+		return
+	}
+	defer os.Remove(zipPath)
+
+	fileName := folder.FolderName + ".zip"
+	c.Header("Content-Disposition", "attachment; filename=\""+fileName+"\"")
+	c.File(zipPath)
 }
 
 // ==================== 批量创建文件夹 ====================

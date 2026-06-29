@@ -67,6 +67,14 @@ func (r *FileRepo) FindByMD5(md5 string) (*model.FileInfo, error) {
 	return &file, nil
 }
 
+// FindAllInFolder 查找用户指定文件夹下所有未删除的文件（不分页）
+func (r *FileRepo) FindAllInFolder(userID, folderID int64) ([]model.FileInfo, error) {
+	var files []model.FileInfo
+	err := r.DB.Where("user_id = ? AND folder_id = ? AND is_delete = 0", userID, folderID).
+		Order("file_name ASC").Find(&files).Error
+	return files, err
+}
+
 // FindByNameInFolder 查找用户指定文件夹下的同名未删除文件
 func (r *FileRepo) FindByNameInFolder(userID, folderID int64, fileName string) (*model.FileInfo, error) {
 	var file model.FileInfo

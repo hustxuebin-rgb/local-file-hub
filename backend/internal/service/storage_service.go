@@ -1,11 +1,13 @@
 package service
 
 import (
+	"archive/zip"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"local-file-hub/backend/internal/model"
@@ -321,4 +323,154 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
+}
+
+// ==================== 文件夹 ZIP 下载 ====================
+
+// skipFiles 定义 ZIP 打包时需要过滤的文件名集合
+var skipFiles = map[string]bool{
+	".DS_Store": true,
+	"__MACOSX":  true,
+	"Thumbs.db": true,
+}
+
+// shouldSkipFile 判断文件是否应被过滤：隐藏文件、系统文件、临时文件
+func shouldSkipFile(fileName string) bool {
+	base := filepath.Base(fileName)
+	if strings.HasPrefix(base, ".") {
+		return true
+	}
+	if skipFiles[base] {
+		return true
+	}
+	if strings.HasSuffix(strings.ToLower(base), ".tmp") {
+		return true
+	}
+	return false
+}
+
+// collectDescendantFolders 递归收集指定父目录下的所有子孙文件夹
+func (s *StorageService) collectDescendantFolders(userID, parentID int64) ([]model.Folder, error) {
+	children, err := s.FolderRepo.FindByUserAndParent(userID, parentID)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []model.Folder
+	for _, child := range children {
+		result = append(result, child)
+		descendants, err := s.collectDescendantFolders(userID, child.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, descendants...)
+	}
+	return result, nil
+}
+
+// ZipFolder 递归收集文件夹下所有文件，过滤后打包为 ZIP，返回临时文件路径
+func (s *StorageService) ZipFolder(folderID int64, userID int64) (zipPath string, err error) {
+	folder, err := s.FolderRepo.FindByID(folderID)
+	if err != nil {
+		return "", fmt.Errorf("文件夹不存在: %w", err)
+	}
+	if folder.UserID != userID {
+		return "", ErrFileNotFound
+	}
+
+	// 收集所有子孙文件夹
+	descendants, err := s.collectDescendantFolders(userID, folderID)
+	if err != nil {
+		return "", fmt.Errorf("收集子文件夹失败: %w", err)
+	}
+
+	// 构建完整文件夹列表（根 + 子孙）
+	allFolders := make([]model.Folder, 0, 1+len(descendants))
+	allFolders = append(allFolders, *folder)
+	allFolders = append(allFolders, descendants...)
+
+	// 构建 folderID → ZIP 内相对路径 映射
+	folderPathMap := make(map[int64]string, len(allFolders))
+	folderPathMap[folderID] = folder.FolderName
+
+	for _, f := range allFolders {
+		if f.ID == folderID {
+			continue
+		}
+		parentPath, ok := folderPathMap[f.ParentID]
+		if !ok {
+			folderPathMap[f.ID] = f.FolderName
+		} else {
+			folderPathMap[f.ID] = parentPath + "/" + f.FolderName
+		}
+	}
+
+	// 创建临时 ZIP 文件
+	tmpFile, err := os.CreateTemp("", "folder-zip-*.zip")
+	if err != nil {
+		return "", fmt.Errorf("创建临时文件失败: %w", err)
+	}
+
+	zipWriter := zip.NewWriter(tmpFile)
+	cleanup := func() {
+		zipWriter.Close()
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+	}
+
+	// 遍历所有文件夹，将文件写入 ZIP
+	for _, f := range allFolders {
+		files, ferr := s.FileRepo.FindAllInFolder(userID, f.ID)
+		if ferr != nil {
+			cleanup()
+			return "", fmt.Errorf("查询文件夹内文件失败: %w", ferr)
+		}
+
+		folderPrefix := folderPathMap[f.ID]
+
+		for _, file := range files {
+			if shouldSkipFile(file.FileName) {
+				continue
+			}
+
+			zipEntryPath := folderPrefix + "/" + file.FileName
+			header := &zip.FileHeader{
+				Name:   zipEntryPath,
+				Method: zip.Deflate,
+			}
+			header.SetModTime(file.CreateTime)
+
+			writer, werr := zipWriter.CreateHeader(header)
+			if werr != nil {
+				cleanup()
+				return "", fmt.Errorf("创建 ZIP 条目失败: %w", werr)
+			}
+
+			src, serr := os.Open(file.FullPath)
+			if serr != nil {
+				cleanup()
+				return "", fmt.Errorf("打开文件失败 %s: %w", file.FullPath, serr)
+			}
+
+			_, cerr := io.Copy(writer, src)
+			src.Close()
+			if cerr != nil {
+				cleanup()
+				return "", fmt.Errorf("写入 ZIP 失败: %w", cerr)
+			}
+		}
+	}
+
+	// 先关闭 zipWriter 再关闭 tmpFile，确保所有数据写入
+	if err := zipWriter.Close(); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("关闭 ZIP 写入器失败: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("关闭临时文件失败: %w", err)
+	}
+
+	return tmpFile.Name(), nil
 }

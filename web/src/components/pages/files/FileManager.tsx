@@ -10,9 +10,11 @@ import {
   Modal,
   Popconfirm,
   Dropdown,
+  Breadcrumb,
   message,
   Tag,
   Empty,
+  Tooltip,
 } from 'antd';
 import type { TableProps, TabsProps, TreeProps } from 'antd';
 import {
@@ -26,20 +28,24 @@ import {
   ShareAltOutlined,
   ReloadOutlined,
   StarOutlined,
+  StarFilled,
   GlobalOutlined,
   LockOutlined,
+  HomeOutlined,
 } from '@ant-design/icons';
 import { useFileStore } from '@/stores/useFileStore';
+import { useFavoriteStore } from '@/stores/useFavoriteStore';
 import {
   createFolder,
   renameFolder,
   deleteFolder,
+  downloadFolder,
   deleteFile,
-  addFavorite,
   listFolders,
   updateFolderVisibility,
 } from '@/api';
 import { getErrorMessage } from '@/utils/errorCodes';
+import { isPreviewable } from '@/utils/preview';
 import type { FileInfo, Folder, SortOption, ListItem } from '@/types';
 import { downloadFile, previewFile, updateFileVisibility, downloadInit } from '@/api/file';
 import { useViewStore } from '@/stores/useViewStore';
@@ -47,6 +53,8 @@ import { useDownload } from '@/hooks/useDownload';
 import FileCategoryTabs from '@/components/shared/FileCategoryTabs';
 import FileViewToggle from '@/components/shared/FileViewToggle';
 import FileGridView from '@/components/shared/FileGridView';
+import FileSearchBar from '@/components/shared/FileSearchBar';
+import FileSortDropdown from '@/components/shared/FileSortDropdown';
 import BatchShareModal from '@/components/shared/BatchShareModal';
 import ShareFileModal from '@/components/shared/ShareFileModal';
 
@@ -67,6 +75,8 @@ function FileManager(): React.ReactNode {
     updateLocalFileVisibility,
     updateLocalFolderVisibility,
   } = useFileStore();
+
+  const { favoritedIds, fetchFavorites, toggleFavorite } = useFavoriteStore();
 
   const [selectedRows, setSelectedRows] = useState<FileInfo[]>([]);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -92,6 +102,13 @@ function FileManager(): React.ReactNode {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareResource, setShareResource] = useState<{ id: number; shareType: number; resourceName?: string } | null>(null);
 
+  // 面包屑导航
+  interface BreadcrumbItem {
+    id: number | null;
+    name: string;
+  }
+  const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([{ id: null, name: '文件管理' }]);
+
   // 子文件夹
   const [subFolders, setSubFolders] = useState<Folder[]>([]);
 
@@ -116,11 +133,10 @@ function FileManager(): React.ReactNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 组件卸载时清理搜索防抖定时器
+  // 初始化收藏状态（用于收藏图标切换）
   useEffect(() => {
-    return () => {
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    };
+    fetchFavorites(1, 9999);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -168,7 +184,6 @@ function FileManager(): React.ReactNode {
   ];
 
   const handleTabChange = (key: string) => {
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     setPartition(Number(key));
     setPage(1);
     setKeyword('');
@@ -176,6 +191,31 @@ function FileManager(): React.ReactNode {
     treeInitializedRef.current = false; // 切换分区后新树需自动展开
     fetchTree(Number(key));
   };
+
+  // 搜索防抖
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearch = useCallback((kw: string) => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    setKeyword(kw);
+    setPage(1);
+  }, []);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchInput(value);
+    setSelectedRowKeys([]);
+    setSelectedRows([]);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (value === '') {
+      setKeyword('');
+      setPage(1);
+    } else {
+      searchTimerRef.current = setTimeout(() => {
+        setKeyword(value);
+        setPage(1);
+      }, 400);
+    }
+  }, []);
 
   const handleTreeSelect: TreeProps['onSelect'] = (keys) => {
     const id = keys[0] as number | undefined;
@@ -229,6 +269,51 @@ function FileManager(): React.ReactNode {
       setTreeSelectedKeys([folderId]);
     }
   }, [folderTree]);
+
+  /** 从 folderTree 递归查找当前 currentFolderId 的面包屑路径 */
+  const findBreadcrumbPath = useCallback((targetId: number | null): BreadcrumbItem[] => {
+    if (targetId === null) return [{ id: null, name: '文件管理' }];
+
+    const findPath = (
+      nodes: Folder[],
+      id: number,
+      path: BreadcrumbItem[],
+    ): BreadcrumbItem[] | null => {
+      for (const node of nodes) {
+        const current: BreadcrumbItem = { id: node.id, name: node.folderName };
+        if (node.id === id) {
+          return [...path, current];
+        }
+        if (node.children && node.children.length > 0) {
+          const result = findPath(node.children, id, [...path, current]);
+          if (result) return result;
+        }
+      }
+      return null;
+    };
+
+    const path = findPath(folderTree, targetId, []);
+    return path ? [{ id: null, name: '文件管理' }, ...path] : [{ id: null, name: '文件管理' }];
+  }, [folderTree]);
+
+  // 面包屑随 currentFolderId 变化自动更新
+  useEffect(() => {
+    setBreadcrumb(findBreadcrumbPath(currentFolderId));
+  }, [currentFolderId, findBreadcrumbPath]);
+
+  /** 面包屑点击：回退到对应层级并同步树状态 */
+  const handleBreadcrumbClick = (index: number) => {
+    const target = breadcrumb[index];
+    setFolderId(target.id);
+    setBreadcrumb((prev) => prev.slice(0, index + 1));
+    setPage(1);
+    fetchSubFolders(target.id);
+    if (target.id !== null) {
+      syncTreeToFolder(target.id);
+    } else {
+      setTreeSelectedKeys([]);
+    }
+  };
 
   const formatFileSize = (size: number): string => {
     if (size < 1024) return `${size} B`;
@@ -296,6 +381,23 @@ function FileManager(): React.ReactNode {
     }
   };
 
+  const handleDownloadFolder = async (id: number, folderName: string) => {
+    try {
+      const blob = await downloadFolder(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = folderName + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err: unknown) {
+      const typedErr = err as { response?: { data?: { code?: number } } };
+      message.error(getErrorMessage(typedErr.response?.data?.code));
+    }
+  };
+
   const handleDownloadFile = async (id: number, fileName: string, fileSize?: number) => {
     // 大文件（>50MB）使用分片下载模式，进度通过 Header 任务图标查看
     if (fileSize && fileSize > LARGE_FILE_THRESHOLD) {
@@ -345,28 +447,11 @@ function FileManager(): React.ReactNode {
     }
   };
 
-  const handleFavorite = async (id: number) => {
-    if (!id || id <= 0) {
-      message.error('参数错误：无效的文件ID');
-      return;
-    }
+  const handleToggleFav = async (targetType: number, targetId: number) => {
     try {
-      await addFavorite({ targetType: 1, targetId: id });
-      message.success('收藏成功');
-    } catch (err: unknown) {
-      const typedErr = err as { response?: { data?: { code?: number } } };
-      message.error(getErrorMessage(typedErr.response?.data?.code));
-    }
-  };
-
-  const handleFavoriteFolder = async (folderId: number) => {
-    if (!folderId || folderId <= 0) {
-      message.error('参数错误');
-      return;
-    }
-    try {
-      await addFavorite({ targetType: 2, targetId: folderId });
-      message.success('收藏成功');
+      await toggleFavorite(targetType, targetId);
+      const isNowFavorited = favoritedIds.has(targetId);
+      message.success(isNowFavorited ? '已取消收藏' : '收藏成功');
     } catch (err: unknown) {
       const typedErr = err as { response?: { data?: { code?: number } } };
       message.error(getErrorMessage(typedErr.response?.data?.code));
@@ -432,9 +517,9 @@ function FileManager(): React.ReactNode {
     await updateFileVisibility(file.id, newVisibility, password);
     // 原地更新本地状态（不切换标签页）
     updateLocalFileVisibility(file.id, newVisibility);
-    const label = newVisibility === 1 ? '共有' : '私有';
+    const label = newVisibility === 1 ? '公共' : '私有';
     const hint = newVisibility === 1
-      ? `已设为共有，可在「公共文件」标签页查看`
+      ? `已设为公共，可在「公共文件」标签页查看`
       : `已设为私有，可在「私有文件」标签页查看`;
     message.success(`${label} · ${hint}`);
   };
@@ -456,7 +541,7 @@ function FileManager(): React.ReactNode {
         // 文件夹可见性切换
         await updateFolderVisibility(pwdFolderTarget.id, 1, pwdValue);
         updateLocalFolderVisibility(pwdFolderTarget.id, 1);
-        message.success('已设为共有');
+        message.success('已设为公共');
       } else {
         return;
       }
@@ -490,35 +575,9 @@ function FileManager(): React.ReactNode {
     }
   };
 
-  // 搜索防抖
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleSearch = useCallback((kw: string) => {
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    setKeyword(kw);
-    setPage(1);
-  }, []);
-
-  const handleSearchChange = useCallback((value: string) => {
-    setSearchInput(value);
-    // 搜索条件变化时清理已选中的行
-    setSelectedRowKeys([]);
-    setSelectedRows([]);
-    // 防抖 400ms 后触发搜索，清除时立即触发
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (value === '') {
-      setKeyword('');
-      setPage(1);
-    } else {
-      searchTimerRef.current = setTimeout(() => {
-        setKeyword(value);
-        setPage(1);
-      }, 400);
-    }
-  }, []);
+  // 搜索回调（已移至上方 handleSearchChange）
 
   const handleCategoryChange = useCallback((_key: string, ft?: number) => {
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     setSelectedRowKeys([]);
     setSelectedRows([]);
     setCategoryKey(_key);
@@ -531,16 +590,23 @@ function FileManager(): React.ReactNode {
       title: '文件名',
       dataIndex: 'fileName',
       key: 'fileName',
+      ellipsis: { showTitle: false },
       sorter: (a, b) => a.fileName.localeCompare(b.fileName, 'zh'),
       sortDirections: ['ascend', 'descend'],
       render: (name: string, record: ListItem) => (
         <Space>
           {record.itemType === 'folder' ? <FolderOutlined /> : <FileOutlined />}
-          <span>{name}</span>
           {record.itemType === 'folder' ? (
-            <Tag color="processing">文件夹</Tag>
+            <>
+              <Tooltip title={name}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{name}</span>
+              </Tooltip>
+              <Tag color="processing">文件夹</Tag>
+            </>
           ) : (
-            <Tag>{record.fileSuffix}</Tag>
+            <Tooltip title={name}>
+              <span>{name}</span>
+            </Tooltip>
           )}
         </Space>
       ),
@@ -549,12 +615,12 @@ function FileManager(): React.ReactNode {
       title: '文件类型',
       dataIndex: 'fileType',
       key: 'fileType',
-      width: 100,
+      width: 110,
       sorter: (a, b) => a.fileType - b.fileType,
       render: (_type: number, record: ListItem) => {
         if (record.itemType === 'folder') return '文件夹';
-        const typeMap: Record<number, string> = { 1: '图片', 2: '视频', 3: '音频', 4: '文档', 5: '其他' };
-        return typeMap[record.fileType] ?? '其他';
+        const suffix = record.fileSuffix?.replace(/^\./, '') || '';
+        return suffix.toUpperCase() || '-';
       },
     },
     {
@@ -579,7 +645,6 @@ function FileManager(): React.ReactNode {
     {
       title: '操作',
       key: 'action',
-      width: 460,
       render: (_: unknown, record: ListItem) => {
         if (record.itemType === 'folder') {
           return (
@@ -610,18 +675,37 @@ function FileManager(): React.ReactNode {
               <Button
                 type="link"
                 size="small"
-                icon={<StarOutlined />}
-                onClick={() => handleFavoriteFolder(record.id)}
+                icon={<DownloadOutlined />}
+                onClick={() => handleDownloadFolder(record.id, record.fileName)}
               >
-                收藏
+                下载
               </Button>
+              {favoritedIds.has(record.id) ? (
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<StarFilled />}
+                  onClick={() => handleToggleFav(2, record.id)}
+                >
+                  已收藏
+                </Button>
+              ) : (
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<StarOutlined />}
+                  onClick={() => handleToggleFav(2, record.id)}
+                >
+                  收藏
+                </Button>
+              )}
               <Button
                 type="link"
                 size="small"
                 icon={record.visibility === 1 ? <GlobalOutlined /> : <LockOutlined />}
                 onClick={() => handleToggleFolderVisibility(record)}
               >
-                {record.visibility === 1 ? '共有' : '私有'}
+                {record.visibility === 1 ? '公共' : '私有'}
               </Button>
               <Popconfirm
                 title="确认删除此文件夹？"
@@ -640,12 +724,20 @@ function FileManager(): React.ReactNode {
             <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => handleDownloadFile(record.id, record.fileName, record.fileSize)}>
               下载
             </Button>
-            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handlePreviewFile(record.id)}>
-              预览
-            </Button>
-            <Button type="link" size="small" icon={<StarOutlined />} onClick={() => handleFavorite(record.id)}>
-              收藏
-            </Button>
+            {isPreviewable(record.fileSuffix) && (
+              <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handlePreviewFile(record.id)}>
+                预览
+              </Button>
+            )}
+            {favoritedIds.has(record.id) ? (
+              <Button type="link" size="small" icon={<StarFilled />} onClick={() => handleToggleFav(1, record.id)}>
+                已收藏
+              </Button>
+            ) : (
+              <Button type="link" size="small" icon={<StarOutlined />} onClick={() => handleToggleFav(1, record.id)}>
+                收藏
+              </Button>
+            )}
             <Button type="link" size="small" icon={<ShareAltOutlined />} onClick={() => handleShareFile(record)}>
               分享
             </Button>
@@ -655,7 +747,7 @@ function FileManager(): React.ReactNode {
               icon={record.visibility === 1 ? <GlobalOutlined /> : <LockOutlined />}
               onClick={() => handleToggleVisibility(record)}
             >
-              {record.visibility === 1 ? '共有' : '私有'}
+              {record.visibility === 1 ? '公共' : '私有'}
             </Button>
             <Popconfirm
               title="确认删除此文件？"
@@ -777,7 +869,7 @@ function FileManager(): React.ReactNode {
           </Card>
         </div>
         <div style={{ flex: 1 }}>
-          {/* 文件操作区：分类在左，搜索+排序+视图在右 */}
+          {/* 文件操作区：分类在左，批量分享+视图在右 */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
             <FileCategoryTabs activeKey={categoryKey} onChange={handleCategoryChange} />
             {selectedRows.length > 0 && (
@@ -791,6 +883,7 @@ function FileManager(): React.ReactNode {
               </Button>
             )}
             <span style={{ marginLeft: 'auto' }}>
+              <FileSortDropdown value={sort} onChange={(newSort) => { setSort(newSort); setPage(1); }} />
               <FileViewToggle />
             </span>
           </div>
@@ -838,7 +931,9 @@ function FileManager(): React.ReactNode {
               loading={loading}
               onDownload={(file) => handleDownloadFile((file as FileInfo).id, (file as FileInfo).fileName, (file as FileInfo).fileSize)}
               onPreview={(file) => handlePreviewFile((file as FileInfo).id)}
-              onFavorite={(file) => handleFavorite((file as FileInfo).id)}
+              onFavorite={(file) => handleToggleFav(1, (file as FileInfo).id)}
+              onRemoveFavorite={(file) => handleToggleFav(1, (file as FileInfo).id)}
+              isFavorited={(id: number) => favoritedIds.has(id)}
             />
           )}
         </div>
@@ -913,7 +1008,7 @@ function FileManager(): React.ReactNode {
 
       {/* 密码确认 Modal（私有→共有） */}
       <Modal
-        title="设为共有"
+        title="设为公共"
         open={pwdModalOpen}
         onOk={handlePwdConfirm}
         onCancel={() => {
@@ -928,7 +1023,7 @@ function FileManager(): React.ReactNode {
         cancelText="取消"
       >
         <p style={{ marginBottom: 12 }}>
-          将「{pwdTarget?.fileName ?? pwdFolderTarget?.fileName}」设为共有，所有人可见。请输入账户密码确认：
+          将「{pwdTarget?.fileName ?? pwdFolderTarget?.fileName}」设为公共，所有人可见。请输入账户密码确认：
         </p>
         <Input.Password
           placeholder="请输入密码"

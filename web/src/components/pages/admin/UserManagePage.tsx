@@ -232,7 +232,7 @@ function UserManagePage(): React.ReactNode {
             <Input disabled={!!editingUser} />
           </Form.Item>
           {!editingUser && (
-            <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
+            <Form.Item name="password" label="密码" preserve={true} rules={[{ required: true, message: '请输入密码' }]}>
               <Input.Password />
             </Form.Item>
           )}

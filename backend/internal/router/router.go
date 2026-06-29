@@ -126,6 +126,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 
 	// 免登录路由（在 Auth 中间件之前注册）
 	r.GET("/api/folder/public", folderHandler.PublicTree)
+	r.GET("/api/file/public", fileHandler.PublicList)
 
 	r.Use(middleware.Auth(cfg.JWT.Secret))
 
@@ -180,6 +181,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		folderGroup.POST("", folderHandler.CreateFolder)
 		folderGroup.POST("/batch", folderHandler.BatchCreateFolders)
 		folderGroup.GET("", folderHandler.ListFolders)
+		folderGroup.GET("/:id/download", folderHandler.FolderDownload)
 		folderGroup.GET("/:id", folderHandler.GetFolder)
 		folderGroup.PUT("/:id", folderHandler.UpdateFolder)
 		folderGroup.PUT("/:id/visibility", folderHandler.UpdateFolderVisibility)
@@ -300,9 +302,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		friendGroup.DELETE("/:friendId", friendHandler.DeleteFriendHandler)
 		friendGroup.GET("/check/:userId", friendHandler.CheckFriendHandler)
 	}
-
-	// 公开文件（无需admin权限）
-	r.GET("/api/file/public", fileHandler.PublicList)
 
 	// 媒体
 	mediaGroup := r.Group("/api/media")

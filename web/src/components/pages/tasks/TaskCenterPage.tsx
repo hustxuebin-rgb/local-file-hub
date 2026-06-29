@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Tabs, Input, Select, Space, message } from 'antd';
+import { Tabs, Input, Select, Space, message, Alert } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
-import { tasksList, tasksStats, tasksBatch } from '@/api/file';
-import type { UnifiedTaskItem } from '@/api/file';
+import { tasksList, tasksStats, tasksBatch, getUnfinishedUploads } from '@/api/file';
+import type { UnifiedTaskItem, UploadTaskInfo } from '@/api/file';
 import { useTaskStore } from '@/stores/useTaskStore';
 import TaskStatsCards from './TaskStatsCards';
 import TaskTable from './TaskTable';
@@ -30,14 +30,44 @@ function TaskCenterPage(): React.ReactNode {
   const [statusFilter, setStatusFilter] = useState<number | undefined>(undefined);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [unfinishedCount, setUnfinishedCount] = useState(0);
 
-  // 页面挂载：并发请求 stats + tasksList
+  // 页面挂载：并发请求 stats + tasksList + 未完成任务恢复
   useEffect(() => {
     setLoading(true);
-    Promise.all([tasksStats(), tasksList()])
-      .then(([statsRes, tasksRes]) => {
+    Promise.all([tasksStats(), tasksList(), getUnfinishedUploads()])
+      .then(([statsRes, tasksRes, unfinishedRes]) => {
         if (statsRes.data) setTaskStats(statsRes.data);
-        if (tasksRes.data) setActiveTasks(tasksRes.data);
+        if (tasksRes.data) {
+          let mergedTasks = tasksRes.data;
+          if (unfinishedRes.data && unfinishedRes.data.length > 0) {
+            setUnfinishedCount(unfinishedRes.data.length);
+            const recoveredTasks: UnifiedTaskItem[] = unfinishedRes.data.map(
+              (task: UploadTaskInfo): UnifiedTaskItem => ({
+                taskId: task.taskId,
+                taskType: 'upload',
+                fileName: task.fileName,
+                filePath: task.filePath,
+                totalSize: task.totalSize,
+                finishedSize: task.chunkSize * task.finishedChunk,
+                totalChunk: task.totalChunk,
+                finishedChunk: task.finishedChunk,
+                folderId: task.folderId,
+                visibility: task.visibility,
+                status: task.status,
+                progress:
+                  task.totalChunk > 0
+                    ? Math.round((task.finishedChunk / task.totalChunk) * 100)
+                    : 0,
+                createTime: task.createTime,
+              }),
+            );
+            const existingIds = new Set(mergedTasks.map((t) => t.taskId));
+            const newTasks = recoveredTasks.filter((t) => !existingIds.has(t.taskId));
+            mergedTasks = [...newTasks, ...mergedTasks];
+          }
+          setActiveTasks(mergedTasks);
+        }
       })
       .catch(() => {
         // 错误已在 client 拦截器中处理
@@ -266,6 +296,22 @@ function TaskCenterPage(): React.ReactNode {
   return (
     <div style={{ padding: 24 }}>
       <h2 style={{ marginBottom: 24 }}>任务中心</h2>
+      {unfinishedCount > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          closable
+          message={`检测到 ${unfinishedCount} 个未完成的上传任务`}
+          description={
+            <span>
+              刷新页面后需重新选择文件才能恢复上传。请切换到
+              <a onClick={() => setActiveTab('upload')}>「上传中」</a>
+              Tab 查看可恢复的任务。
+            </span>
+          }
+          style={{ marginBottom: 16 }}
+        />
+      )}
       <TaskStatsCards stats={taskStats} />
       <Tabs
         activeKey={activeTab}

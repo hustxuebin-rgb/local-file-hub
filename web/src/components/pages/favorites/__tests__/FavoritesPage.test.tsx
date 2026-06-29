@@ -10,7 +10,10 @@ vi.mock('@/stores/useFavoriteStore', () => ({
     favorites: [],
     total: 0,
     loading: false,
+    favoritedIds: new Set<number>(),
     fetchFavorites: mockFetchFavorites,
+    isFavorited: () => false,
+    toggleFavorite: vi.fn().mockResolvedValue(undefined),
   })),
 }));
 
@@ -27,9 +30,18 @@ vi.mock('@/api', () => ({
   removeFavorite: vi.fn().mockResolvedValue({ code: 200 }),
 }));
 
+vi.mock('@/api/file', () => ({
+  previewFile: vi.fn().mockResolvedValue(new Blob()),
+}));
+
 // Mock errorCodes
 vi.mock('@/utils/errorCodes', () => ({
   getErrorMessage: vi.fn(() => '操作失败'),
+}));
+
+// Mock preview
+vi.mock('@/utils/preview', () => ({
+  isPreviewable: vi.fn(() => true),
 }));
 
 describe('FavoritesPage', () => {

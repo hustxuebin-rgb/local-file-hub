@@ -67,3 +67,8 @@ export function batchCreateFolders(
 export function updateFolderVisibility(id: number, visibility: number, password?: string): Promise<ApiResponse> {
   return client.put(`/api/folder/${id}/visibility`, { visibility, password }).then((res) => res.data);
 }
+
+/** 下载文件夹为 ZIP */
+export function downloadFolder(id: number): Promise<Blob> {
+  return client.get(`/api/folder/${id}/download`, { responseType: 'blob' }).then((res) => res.data);
+}

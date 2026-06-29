@@ -12,6 +12,7 @@ export {
   renameFolder,
   moveFolder,
   deleteFolder,
+  downloadFolder,
   getTree,
   batchCreateFolders,
   updateFolderVisibility,

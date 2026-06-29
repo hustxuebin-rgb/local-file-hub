@@ -115,6 +115,12 @@ function DiskManagePage(): React.ReactNode {
   const handleDiskSubmit = async () => {
     try {
       const values = await diskForm.validateFields();
+      // 防护：如果 diskType 因 preserve=false 丢失，引导用户回到步骤 1
+      if (!editingDisk && values.diskType === undefined) {
+        message.warning('请选择磁盘类型');
+        setDiskStep(1);
+        return;
+      }
       setDiskSubmitting(true);
       if (editingDisk) {
         await updateDisk(editingDisk.id, values);
@@ -234,7 +240,7 @@ function DiskManagePage(): React.ReactNode {
               <div style={{ marginBottom: 16, color: '#666', fontSize: 13 }}>
                 步骤 1/3：选择磁盘类型
               </div>
-              <Form.Item name="diskType" label="磁盘类型" rules={[{ required: true, message: '请选择磁盘类型' }]}>
+              <Form.Item name="diskType" label="磁盘类型" preserve={true} rules={[{ required: true, message: '请选择磁盘类型' }]}>
                 <Select
                   placeholder="请选择磁盘类型"
                   options={[
@@ -323,7 +329,7 @@ function DiskManagePage(): React.ReactNode {
               <div style={{ marginBottom: 16, color: '#666', fontSize: 13 }}>
                 步骤 3/3：选择存储路径
               </div>
-              <Form.Item name="diskPath" label="磁盘路径" rules={[{ required: true, message: '请选择存储路径' }]}>
+              <Form.Item name="diskPath" label="磁盘路径" preserve={true} rules={[{ required: true, message: '请选择存储路径' }]}>
                 <FolderPicker
                   placeholder="在选定磁盘中选择存储路径"
                   initialPath={selectedMount}

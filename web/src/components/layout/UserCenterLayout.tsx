@@ -8,6 +8,7 @@ import {
   LogoutOutlined,
   HomeOutlined,
   SafetyCertificateOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { logout as logoutApi } from '@/api';
@@ -21,6 +22,7 @@ type MenuItem = Required<MenuProps>['items'][number];
 const menuItems: MenuItem[] = [
   { key: '/user-center/profile', icon: <UserOutlined />, label: '个人资料' },
   { key: '/user-center/storage', icon: <DatabaseOutlined />, label: '存储配额' },
+  { key: '/user-center/logs', icon: <HistoryOutlined />, label: '操作记录' },
 ];
 
 function UserCenterLayout(): React.ReactNode {

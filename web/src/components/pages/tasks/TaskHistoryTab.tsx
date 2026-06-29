@@ -33,7 +33,7 @@ function TaskHistoryTab({ type }: TaskHistoryTabProps): React.ReactNode {
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchHistory = useCallback(
     async (p: number, ps: number, kw: string, st: string) => {

@@ -34,6 +34,16 @@ vi.mock('@/stores/useViewStore', () => ({
   useViewStore: () => ({ viewMode: 'list' as const }),
 }));
 
+// Mock useFavoriteStore
+vi.mock('@/stores/useFavoriteStore', () => ({
+  useFavoriteStore: () => ({
+    favoritedIds: new Set<number>(),
+    fetchFavorites: vi.fn().mockResolvedValue(undefined),
+    toggleFavorite: vi.fn().mockResolvedValue(undefined),
+    isFavorited: () => false,
+  }),
+}));
+
 // Mock API calls
 vi.mock('@/api', () => ({
   createFolder: vi.fn().mockResolvedValue({ data: {} }),
@@ -42,6 +52,14 @@ vi.mock('@/api', () => ({
   deleteFile: vi.fn().mockResolvedValue({ data: {} }),
   addFavorite: vi.fn().mockResolvedValue({ data: {} }),
   listFolders: vi.fn().mockResolvedValue({ data: [] }),
+  listFavorites: vi.fn().mockResolvedValue({ data: { list: [], total: 0 } }),
+  updateFolderVisibility: vi.fn().mockResolvedValue({ data: {} }),
+}));
+
+vi.mock('@/hooks/useDownload', () => ({
+  useDownload: () => ({
+    startDownload: vi.fn(),
+  }),
 }));
 
 vi.mock('@/api/file', () => ({
@@ -54,7 +72,17 @@ vi.mock('@/utils/errorCodes', () => ({
   getErrorMessage: vi.fn((code?: number) => `Error: ${code ?? 'unknown'}`),
 }));
 
+vi.mock('@/utils/preview', () => ({
+  isPreviewable: vi.fn(() => true),
+}));
+
 // Mock child components
+vi.mock('@/components/shared/FileSearchBar', () => ({
+  default: ({ placeholder }: { placeholder?: string }) => (
+    <div data-testid="file-search-bar">{placeholder}</div>
+  ),
+}));
+
 vi.mock('@/components/shared/FileCategoryTabs', () => ({
   default: ({ activeKey }: { activeKey: string }) => (
     <div data-testid="file-category-tabs">{activeKey}</div>

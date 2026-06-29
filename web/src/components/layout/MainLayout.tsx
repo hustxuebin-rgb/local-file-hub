@@ -14,9 +14,7 @@ import {
   SafetyCertificateOutlined,
   GlobalOutlined,
   StarOutlined,
-  HistoryOutlined,
   UsergroupAddOutlined,
-  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { logout as logoutApi } from '@/api';
@@ -36,6 +34,7 @@ function MainLayout(): React.ReactNode {
   const { user, logout } = useAuthStore();
 
   const [serverOnline, setServerOnline] = useState(false);
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
 
   useEffect(() => {
     getServerInfo()
@@ -43,16 +42,28 @@ function MainLayout(): React.ReactNode {
       .catch(() => setServerOnline(false));
   }, []);
 
+  // 当路由在分享页面时，自动展开分享管理 SubMenu
+  useEffect(() => {
+    if (location.pathname.startsWith('/share/')) {
+      setOpenKeys((prev) => {
+        if (!prev.includes('/share')) {
+          return [...prev, '/share'];
+        }
+        return prev;
+      });
+    }
+  }, [location.pathname]);
+
   const menuItems: MenuItem[] = useMemo(() => {
     const items: MenuItem[] = [
       { key: '/files', icon: <FolderOpenOutlined />, label: '文件管理' },
       { key: '/upload', icon: <UploadOutlined />, label: '上传文件' },
-      { key: '/tasks', icon: <ClockCircleOutlined />, label: '任务中心' },
-      { key: '/public', icon: <GlobalOutlined />, label: '公共空间' },
       { key: '/favorites', icon: <StarOutlined />, label: '我的收藏' },
-      { key: '/logs', icon: <HistoryOutlined />, label: '操作记录' },
-      { key: '/share/my', icon: <ShareAltOutlined />, label: '我的分享' },
-      { key: '/share/received', icon: <ShareAltOutlined />, label: '收到的分享' },
+      { key: '/share', icon: <ShareAltOutlined />, label: '分享管理', children: [
+        { key: '/share/my', label: '我的分享' },
+        { key: '/share/received', label: '收到的分享' },
+      ],
+      },
       { key: '/recycle', icon: <DeleteOutlined />, label: '回收站' },
     ];
 
@@ -128,7 +139,7 @@ function MainLayout(): React.ReactNode {
           theme="dark"
           mode="inline"
           selectedKeys={[selectedKey]}
-          defaultOpenKeys={[]}
+          openKeys={openKeys} onOpenChange={setOpenKeys}
           items={menuItems}
           onClick={handleMenuClick}
         />
@@ -151,6 +162,7 @@ function MainLayout(): React.ReactNode {
           />
           <Space>
             <TaskManagerButton />
+            <Button type="text" icon={<GlobalOutlined />} onClick={() => navigate('/public')}>公共空间</Button>
             <Tag
               color={serverOnline ? 'success' : 'error'}
               icon={serverOnline ? <Badge status="success" /> : <Badge status="error" />}

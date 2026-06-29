@@ -8,6 +8,7 @@ import { useViewStore } from '@/stores/useViewStore';
 import { removeFavorite } from '@/api';
 import { previewFile } from '@/api/file';
 import { getErrorMessage } from '@/utils/errorCodes';
+import { isPreviewable } from '@/utils/preview';
 import FileViewToggle from '@/components/shared/FileViewToggle';
 import FileSearchBar from '@/components/shared/FileSearchBar';
 import FileSortDropdown from '@/components/shared/FileSortDropdown';
@@ -124,15 +125,19 @@ function FavoritesPage(): React.ReactNode {
       title: '资源名称',
       dataIndex: 'targetName',
       key: 'targetName',
+      width: 260,
+      ellipsis: { showTitle: false },
     },
     {
       title: '类型',
       dataIndex: 'targetType',
       key: 'targetType',
-      width: 100,
-      render: (type: number) => {
-        const info = TARGET_TYPE_MAP[type] ?? { label: '未知', color: 'default' };
-        return <Tag color={info.color}>{info.label}</Tag>;
+      width: 110,
+      render: (_type: number, record: Favorite) => {
+        if (record.targetType === 2) return '文件夹';
+        if (record.targetType === 3) return '分享';
+        const ext = record.targetName?.split('.').pop()?.toUpperCase() || '';
+        return ext || '-';
       },
     },
     {
@@ -160,9 +165,15 @@ function FavoritesPage(): React.ReactNode {
       width: 200,
       render: (_: unknown, record: Favorite) => (
         <Space>
-          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleView(record)}>
-            查看
-          </Button>
+          {record.targetType === 1 && isPreviewable(record.targetName?.split('.').pop()) ? (
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleView(record)}>
+              预览
+            </Button>
+          ) : record.targetType !== 1 ? (
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleView(record)}>
+              查看
+            </Button>
+          ) : null}
           <Popconfirm
             title="确认取消收藏？"
             onConfirm={() => handleRemoveFavorite(record)}

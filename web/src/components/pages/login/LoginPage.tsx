@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, Card, Typography, message, Checkbox, Space, List, Divider, Collapse } from 'antd';
 import { UserOutlined, LockOutlined, ScanOutlined, WifiOutlined } from '@ant-design/icons';
-import { QRCodeSVG } from 'qrcode.react';
 import { login } from '@/api';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { getErrorMessage } from '@/utils/errorCodes';
@@ -134,7 +133,7 @@ function LoginPage(): React.ReactNode {
                 <li>手机和电脑连接同一WiFi</li>
                 <li>尝试用IP直接访问：终端启动日志中的局域网地址</li>
                 <li>检查电脑防火墙是否开放 8080 端口</li>
-                <li>小程序用户请扫描上方二维码获取地址</li>
+                <li>小程序用户请在电脑浏览器访问服务地址</li>
               </ul>
             ),
           }]}
@@ -186,18 +185,7 @@ function LoginPage(): React.ReactNode {
           )}
         </Space>
 
-        <Divider plain>
-          <Text type="secondary">扫码访问</Text>
-        </Divider>
 
-        <div style={{ textAlign: 'center', paddingBottom: 8 }}>
-          <QRCodeSVG value={`http://${window.location.hostname}:8080`} size={120} />
-          <div style={{ marginTop: 8 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {`http://${window.location.hostname}:8080`}
-            </Text>
-          </div>
-        </div>
       </Card>
     </div>
   );

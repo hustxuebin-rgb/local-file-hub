@@ -43,6 +43,7 @@ function AppRoutes(): React.ReactNode {
           <Route index element={<Navigate to="/user-center/profile" replace />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="storage" element={<StoragePage />} />
+          <Route path="logs" element={<OperationLogsPage />} />
         </Route>
 
         {/* 好友中心 - 独立页面 */}
@@ -69,7 +70,6 @@ function AppRoutes(): React.ReactNode {
           <Route path="upload" element={<UploadPage />} />
           <Route path="public" element={<PublicSpace />} />
           <Route path="favorites" element={<FavoritesPage />} />
-          <Route path="logs" element={<OperationLogsPage />} />
           <Route path="share/my" element={<ShareMyPage />} />
           <Route path="share/received" element={<ShareReceivedPage />} />
           <Route path="recycle" element={<RecyclePage />} />
