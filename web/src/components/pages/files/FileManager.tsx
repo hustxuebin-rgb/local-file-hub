@@ -54,9 +54,9 @@ import FileCategoryTabs from '@/components/shared/FileCategoryTabs';
 import FileViewToggle from '@/components/shared/FileViewToggle';
 import FileGridView from '@/components/shared/FileGridView';
 import FileSearchBar from '@/components/shared/FileSearchBar';
-import FileSortDropdown from '@/components/shared/FileSortDropdown';
 import BatchShareModal from '@/components/shared/BatchShareModal';
 import ShareFileModal from '@/components/shared/ShareFileModal';
+import BreadcrumbNav from '@/components/shared/BreadcrumbNav';
 
 const { DirectoryTree } = Tree;
 
@@ -151,26 +151,6 @@ function FileManager(): React.ReactNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolderId, currentPartition, page, keyword, fileType, sort]);
 
-  // Ant Design Table onChange 回调：处理分页、排序、筛选
-  const handleTableChange: TableProps<ListItem>['onChange'] = useCallback(
-    (_pagination, _filters, sorter) => {
-      // 只处理排序（分页已在 pagination.onChange 单独处理）
-      if (!Array.isArray(sorter) && sorter.order) {
-        const fieldMap: Record<string, SortOption['field']> = {
-          fileName: 'name',
-          fileType: 'fileType',
-          fileSize: 'fileSize',
-          createTime: 'createTime',
-        };
-        const sortBy = fieldMap[sorter.field as string] || 'createTime';
-        const sortOrder = sorter.order === 'ascend' ? 'asc' : 'desc';
-        setSort({ field: sortBy, order: sortOrder });
-        setPage(1);
-      }
-    },
-    [],
-  );
-
   useEffect(() => {
     if (folderTree.length > 0 && !treeInitializedRef.current) {
       setTreeExpandedKeys(folderTree.map(f => f.id));
@@ -220,6 +200,7 @@ function FileManager(): React.ReactNode {
   const handleTreeSelect: TreeProps['onSelect'] = (keys) => {
     const id = keys[0] as number | undefined;
     setFolderId(id ?? null);
+    setTreeSelectedKeys(keys);
     setPage(1);
     // 选中文件夹后获取子文件夹
     fetchSubFolders(id ?? null);
@@ -591,8 +572,6 @@ function FileManager(): React.ReactNode {
       dataIndex: 'fileName',
       key: 'fileName',
       ellipsis: { showTitle: false },
-      sorter: (a, b) => a.fileName.localeCompare(b.fileName, 'zh'),
-      sortDirections: ['ascend', 'descend'],
       render: (name: string, record: ListItem) => (
         <Space>
           {record.itemType === 'folder' ? <FolderOutlined /> : <FileOutlined />}
@@ -616,7 +595,6 @@ function FileManager(): React.ReactNode {
       dataIndex: 'fileType',
       key: 'fileType',
       width: 110,
-      sorter: (a, b) => a.fileType - b.fileType,
       render: (_type: number, record: ListItem) => {
         if (record.itemType === 'folder') return '文件夹';
         const suffix = record.fileSuffix?.replace(/^\./, '') || '';
@@ -628,7 +606,6 @@ function FileManager(): React.ReactNode {
       dataIndex: 'fileSize',
       key: 'fileSize',
       width: 120,
-      sorter: (a, b) => a.fileSize - b.fileSize,
       render: (_size: number, record: ListItem) => {
         if (record.itemType === 'folder') return '-';
         return formatFileSize(record.fileSize);
@@ -639,8 +616,6 @@ function FileManager(): React.ReactNode {
       dataIndex: 'createTime',
       key: 'createTime',
       width: 180,
-      sorter: (a, b) => new Date(a.createTime).getTime() - new Date(b.createTime).getTime(),
-      defaultSortOrder: 'ascend',
     },
     {
       title: '操作',
@@ -793,24 +768,29 @@ function FileManager(): React.ReactNode {
 
   /** 合并子文件夹与文件为统一列表 */
   const mergedList = useMemo<ListItem[]>(() => {
-    const folderItems: ListItem[] = subFolders.map((f) => ({
-      id: f.id,
-      userId: f.userId ?? 0,
-      folderId: f.parentId,
-      fileName: f.folderName,
-      saveName: '',
-      fileSuffix: '',
-      fileType: 6, // 文件夹类型
-      fileSize: 0,
-      mimeType: undefined,
-      md5: '',
-      fullPath: f.fullPath ?? '',
-      visibility: f.isPublic ?? 0,
-      isDelete: 0,
-      createTime: f.createTime ?? '',
-      itemType: 'folder' as const,
-      folderData: f,
-    }));
+    // 根目录时使用 folderTree 顶层元素作为文件夹数据源，子目录时使用 API 返回的 subFolders
+    const folderSource = currentFolderId === null ? folderTree : subFolders;
+    const kw = keyword?.trim().toLowerCase() ?? '';
+    const folderItems: ListItem[] = folderSource
+      .map((f) => ({
+        id: f.id,
+        userId: f.userId ?? 0,
+        folderId: f.parentId,
+        fileName: f.folderName,
+        saveName: '',
+        fileSuffix: '',
+        fileType: 6, // 文件夹类型
+        fileSize: 0,
+        mimeType: undefined,
+        md5: '',
+        fullPath: f.fullPath ?? '',
+        visibility: f.isPublic ?? 0,
+        isDelete: 0,
+        createTime: f.createTime ?? '',
+        itemType: 'folder' as const,
+        folderData: f,
+      }))
+      .filter((f) => !kw || f.fileName.toLowerCase().includes(kw));
     const fileItems: ListItem[] = fileList.map((f) => ({
       ...f,
       itemType: 'file' as const,
@@ -819,7 +799,7 @@ function FileManager(): React.ReactNode {
       return fileItems;
     }
     return [...folderItems, ...fileItems];
-  }, [subFolders, fileList, fileType]);
+  }, [subFolders, fileList, fileType, folderTree, currentFolderId, keyword]);
 
   return (
     <Card
@@ -840,39 +820,48 @@ function FileManager(): React.ReactNode {
             onSearch={handleSearch}
             style={{ width: 220 }}
           />
+          <FileViewToggle />
         </Space>
       }
     >
       <Tabs activeKey={String(currentPartition)} items={tabsItems} onChange={handleTabChange} />
 
       <div style={{ display: 'flex', gap: 16 }}>
-        <div style={{ width: 240, minWidth: 240 }}>
-          <Card title="文件夹" size="small">
-            {folderTree.length > 0 ? (
-              <DirectoryTree
-                treeData={treeData}
-                expandedKeys={treeExpandedKeys}
-                selectedKeys={treeSelectedKeys}
-                onSelect={(keys, info) => {
-                  handleTreeSelect(keys, info);
-                  if (info.node.key && treeExpandedKeys.includes(info.node.key)) {
-                    setTreeExpandedKeys(prev => prev.filter(k => k !== info.node.key));
-                  } else {
-                    setTreeExpandedKeys(prev => [...prev, info.node.key as React.Key]);
-                  }
-                }}
-                onExpand={(keys) => setTreeExpandedKeys(keys)}
-              />
-            ) : (
-              <Empty description="暂无文件夹" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            )}
-          </Card>
-        </div>
+        {viewMode === 'list' && (
+          <div style={{ width: 240, minWidth: 240 }}>
+            <Card title="文件夹" size="small">
+              {folderTree.length > 0 ? (
+                <DirectoryTree
+                  treeData={treeData}
+                  expandedKeys={treeExpandedKeys}
+                  selectedKeys={treeSelectedKeys}
+                  onSelect={(keys, info) => {
+                    handleTreeSelect(keys, info);
+                    if (info.node.key && treeExpandedKeys.includes(info.node.key)) {
+                      setTreeExpandedKeys(prev => prev.filter(k => k !== info.node.key));
+                    } else {
+                      setTreeExpandedKeys(prev => [...prev, info.node.key as React.Key]);
+                    }
+                  }}
+                  onExpand={(keys) => setTreeExpandedKeys(keys)}
+                />
+              ) : (
+                <Empty description="暂无文件夹" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
+            </Card>
+          </div>
+        )}
         <div style={{ flex: 1 }}>
+          {/* 图标模式：面包屑导航 */}
+          {viewMode === 'grid' && (
+            <div style={{ marginBottom: 12 }}>
+              <BreadcrumbNav items={breadcrumb} onClick={handleBreadcrumbClick} />
+            </div>
+          )}
           {/* 文件操作区：分类在左，批量分享+视图在右 */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
             <FileCategoryTabs activeKey={categoryKey} onChange={handleCategoryChange} />
-            {selectedRows.length > 0 && (
+            {viewMode === 'list' && selectedRows.length > 0 && (
               <Button
                 type="primary"
                 size="small"
@@ -882,10 +871,6 @@ function FileManager(): React.ReactNode {
                 批量分享 ({selectedRows.length})
               </Button>
             )}
-            <span style={{ marginLeft: 'auto' }}>
-              <FileSortDropdown value={sort} onChange={(newSort) => { setSort(newSort); setPage(1); }} />
-              <FileViewToggle />
-            </span>
           </div>
           {viewMode === 'list' ? (
             <Table<ListItem>
@@ -893,7 +878,6 @@ function FileManager(): React.ReactNode {
               columns={columns}
               dataSource={mergedList}
               loading={loading}
-              onChange={handleTableChange}
               pagination={{
                 current: page,
                 pageSize,
@@ -931,8 +915,19 @@ function FileManager(): React.ReactNode {
               loading={loading}
               onDownload={(file) => handleDownloadFile((file as FileInfo).id, (file as FileInfo).fileName, (file as FileInfo).fileSize)}
               onPreview={(file) => handlePreviewFile((file as FileInfo).id)}
-              onFavorite={(file) => handleToggleFav(1, (file as FileInfo).id)}
-              onRemoveFavorite={(file) => handleToggleFav(1, (file as FileInfo).id)}
+              onFavorite={(file) => {
+                const f = file as FileInfo;
+                handleToggleFav(f.fileType === 6 ? 2 : 1, f.id);
+              }}
+              onRemoveFavorite={(file) => {
+                const f = file as FileInfo;
+                handleToggleFav(f.fileType === 6 ? 2 : 1, f.id);
+              }}
+              onFolderClick={(file) => {
+                setFolderId((file as FileInfo).id);
+                setPage(1);
+                fetchSubFolders((file as FileInfo).id);
+              }}
               isFavorited={(id: number) => favoritedIds.has(id)}
             />
           )}

@@ -21,6 +21,23 @@ const mockFile: FileInfo = {
   createTime: '2026-01-01 00:00:00',
 };
 
+const mockFolder: FileInfo = {
+  id: 2,
+  userId: 1,
+  folderId: 0,
+  fileName: '测试文件夹',
+  saveName: '测试文件夹',
+  fileSuffix: '',
+  fileType: 6,
+  fileSize: 0,
+  mimeType: '',
+  md5: '',
+  fullPath: '/测试文件夹',
+  visibility: 0,
+  isDelete: 0,
+  createTime: '2026-01-01 00:00:00',
+};
+
 describe('FileGridView', () => {
   it('空数据展示 Empty 组件', () => {
     render(<FileGridView files={[]} />);
@@ -40,7 +57,6 @@ describe('FileGridView', () => {
 
   it('图片文件类型渲染图片图标', () => {
     render(<FileGridView files={[mockFile]} />);
-    // 应渲染 PictureOutlined 或缩略图
     expect(screen.getByText('test.png')).toBeInTheDocument();
   });
 
@@ -66,5 +82,30 @@ describe('FileGridView', () => {
     const btn = screen.getByText('收藏');
     await user.click(btn);
     expect(onFavorite).toHaveBeenCalledWith(mockFile);
+  });
+
+  it('文件夹卡片点击触发 onFolderClick 回调', async () => {
+    const user = userEvent.setup();
+    const onFolderClick = vi.fn();
+    render(<FileGridView files={[mockFolder]} onFolderClick={onFolderClick} />);
+    // 点击文件夹名称触发卡片的 onClick
+    const folderName = screen.getByText('测试文件夹');
+    await user.click(folderName);
+    expect(onFolderClick).toHaveBeenCalledWith(mockFolder);
+  });
+
+  it('文件卡片点击不触发 onFolderClick', async () => {
+    const user = userEvent.setup();
+    const onFolderClick = vi.fn();
+    render(<FileGridView files={[mockFile]} onFolderClick={onFolderClick} />);
+    const fileName = screen.getByText('test.png');
+    await user.click(fileName);
+    expect(onFolderClick).not.toHaveBeenCalled();
+  });
+
+  it('文件夹渲染文件夹图标和标签', () => {
+    render(<FileGridView files={[mockFolder]} />);
+    expect(screen.getByText('测试文件夹')).toBeInTheDocument();
+    expect(screen.getByText('文件夹')).toBeInTheDocument();
   });
 });

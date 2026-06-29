@@ -45,6 +45,7 @@ interface FileGridViewProps {
   onPreview?: (file: GridFileItem) => void;
   onFavorite?: (file: GridFileItem) => void;
   onRemoveFavorite?: (file: GridFileItem) => void;
+  onFolderClick?: (file: GridFileItem) => void;
   isFavorited?: (id: number) => boolean;
   showUploader?: boolean;
 }
@@ -56,6 +57,7 @@ function FileGridView({
   onPreview,
   onFavorite,
   onRemoveFavorite,
+  onFolderClick,
   isFavorited,
   showUploader = false,
 }: FileGridViewProps): React.ReactNode {
@@ -70,6 +72,7 @@ function FileGridView({
         const fileSize: number = 'targetSize' in file ? (file.targetSize as number) : (file as FileInfo).fileSize;
         const fileSuffix: string | undefined = 'fileSuffix' in file ? (file as FileInfo).fileSuffix : undefined;
         const fileType: number = 'fileType' in file ? (file as FileInfo).fileType : 4;
+        const isFolder = fileType === 6 || ('type' in file && (file as PublicFile).type === 'folder');
         const thumbnailUrl = (file as FileInfo).id
           ? `/api/media/thumbnail/${(file as FileInfo).id}`
           : undefined;
@@ -135,7 +138,8 @@ function FileGridView({
           <Card
             key={(file as FileInfo).id ?? `${file.targetType}-${file.targetId}`}
             hoverable
-            style={{ width: 200 }}
+            style={{ width: 200, ...(isFolder ? { cursor: 'pointer' } : {}) }}
+            onClick={isFolder ? () => onFolderClick?.(file) : undefined}
             cover={
               thumbnailUrl ? (
                 <div

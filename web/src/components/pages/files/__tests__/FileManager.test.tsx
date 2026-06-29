@@ -30,8 +30,17 @@ vi.mock('@/stores/useFileStore', () => ({
   },
 }));
 
+let mockViewMode: import('@/types').ViewMode = 'list';
+const mockSetViewMode = vi.fn((mode: import('@/types').ViewMode) => {
+  mockViewMode = mode;
+});
+
 vi.mock('@/stores/useViewStore', () => ({
-  useViewStore: () => ({ viewMode: 'list' as const }),
+  useViewStore: () => ({
+    viewMode: mockViewMode,
+    setViewMode: mockSetViewMode,
+    toggleView: vi.fn(),
+  }),
 }));
 
 // Mock useFavoriteStore
@@ -89,16 +98,26 @@ vi.mock('@/components/shared/FileCategoryTabs', () => ({
   ),
 }));
 
-vi.mock('@/components/shared/FileSortDropdown', () => ({
-  default: () => <div data-testid="file-sort-dropdown" />,
-}));
-
 vi.mock('@/components/shared/FileViewToggle', () => ({
   default: () => <div data-testid="file-view-toggle" />,
 }));
 
 vi.mock('@/components/shared/FileGridView', () => ({
-  default: () => <div data-testid="file-grid-view" />,
+  default: ({ onFolderClick }: any) => (
+    <div data-testid="file-grid-view" data-has-folder-click={String(!!onFolderClick)} />
+  ),
+}));
+
+vi.mock('@/components/shared/BreadcrumbNav', () => ({
+  default: ({ items, onClick }: any) => (
+    <nav data-testid="breadcrumb-nav">
+      {items.map((item: any, i: number) => (
+        <span key={i} data-testid={`breadcrumb-item-${i}`} onClick={() => onClick(i)}>
+          {item.name}
+        </span>
+      ))}
+    </nav>
+  ),
 }));
 
 vi.mock('@/components/shared/BatchShareModal', () => ({
@@ -112,6 +131,10 @@ vi.mock('@/components/shared/ShareFileModal', () => ({
 describe('FileManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockViewMode = 'list';
+    mockSetViewMode.mockImplementation((mode: import('@/types').ViewMode) => {
+      mockViewMode = mode;
+    });
     mockStoreState = {
       currentPartition: 0,
       currentFolderId: null,
@@ -170,9 +193,9 @@ describe('FileManager', () => {
     render(<FileManager />);
 
     await waitFor(() => {
-      // 根文件夹应出现在树中
-      expect(screen.getByText('根文件夹')).toBeInTheDocument();
-      expect(screen.getByText('另一个根')).toBeInTheDocument();
+      // 根文件夹应出现在树中（列表模式下也会出现在表格中，所以用 getAllByText）
+      expect(screen.getAllByText('根文件夹').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('另一个根').length).toBeGreaterThan(0);
     });
   });
 
@@ -210,8 +233,8 @@ describe('FileManager', () => {
     rerender(<FileManager />);
 
     await waitFor(() => {
-      expect(screen.getByText('Folder1')).toBeInTheDocument();
-      expect(screen.getByText('Folder2')).toBeInTheDocument();
+      expect(screen.getAllByText('Folder1').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Folder2').length).toBeGreaterThan(0);
     });
 
     // 再次更新 folderTree 不应导致额外副作用（ref 已设置）
@@ -223,7 +246,7 @@ describe('FileManager', () => {
     rerender(<FileManager />);
 
     await waitFor(() => {
-      expect(screen.getByText('Folder3')).toBeInTheDocument();
+      expect(screen.getAllByText('Folder3').length).toBeGreaterThan(0);
     });
   });
 
@@ -235,7 +258,7 @@ describe('FileManager', () => {
     const { rerender } = render(<FileManager />);
 
     await waitFor(() => {
-      expect(screen.getByText('PrivateFolder')).toBeInTheDocument();
+      expect(screen.getAllByText('PrivateFolder').length).toBeGreaterThan(0);
     });
 
     // 模拟切换分区后 folderTree 先清空再加载新数据
@@ -246,6 +269,45 @@ describe('FileManager', () => {
 
     await waitFor(() => {
       expect(screen.getByText('暂无文件夹')).toBeInTheDocument();
+    });
+  });
+
+  // ==================== 双模式布局测试 ====================
+
+  it('列表模式（viewMode=list）下应渲染侧边栏，不应渲染面包屑', async () => {
+    mockViewMode = 'list';
+
+    render(<FileManager />);
+
+    await waitFor(() => {
+      // 侧边栏应可见（文件夹 Card + 空状态提示）
+      expect(screen.getByText('暂无文件夹')).toBeInTheDocument();
+      // 面包屑不应渲染
+      expect(screen.queryByTestId('breadcrumb-nav')).not.toBeInTheDocument();
+    });
+  });
+
+  it('图标模式（viewMode=grid）下应渲染 BreadcrumbNav，不应渲染侧边栏', async () => {
+    mockViewMode = 'grid';
+
+    render(<FileManager />);
+
+    await waitFor(() => {
+      // 面包屑应可见
+      expect(screen.getByTestId('breadcrumb-nav')).toBeInTheDocument();
+      // 侧边栏不应渲染（folderTree 为空时 "暂无文件夹" 出现在侧边栏 Card 中，grid 模式无侧边栏）
+      expect(screen.queryByText('暂无文件夹')).not.toBeInTheDocument();
+    });
+  });
+
+  it('图标模式下 FileGridView 应获得 onFolderClick prop', async () => {
+    mockViewMode = 'grid';
+
+    render(<FileManager />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('file-grid-view')).toBeInTheDocument();
+      expect(screen.getByTestId('file-grid-view')).toHaveAttribute('data-has-folder-click', 'true');
     });
   });
 });
